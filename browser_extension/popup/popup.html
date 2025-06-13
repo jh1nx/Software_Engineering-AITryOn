@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 320px;
+      padding: 20px;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .status.connected {
+      background-color: #e8f5e8;
+      color: #2e7d32;
+    }
+    .status.disconnected {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+    .connected .status-dot {
+      background-color: #4caf50;
+    }
+    .disconnected .status-dot {
+      background-color: #f44336;
+    }
+    .instructions {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .instructions h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+    .instructions ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin-bottom: 5px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #2196f3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .settings-info {
+      font-size: 11px;
+      color: #666;
+      margin-top: 10px;
+      padding: 8px;
+      background: #f9f9f9;
+      border-radius: 3px;
+      border: 1px solid #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>图片传输助手</h2>
+  </div>
+  
+  <div id="serverStatus" class="status disconnected">
+    <div class="status-dot"></div>
+    <span id="statusText">检查服务器状态中...</span>
+  </div>
+  
+  <div class="instructions">
+    <h3>使用说明：</h3>
+    <ol>
+      <li>确保本地处理软件已启动</li>
+      <li>在网页上右键点击图片</li>
+      <li>选择"发送图片到本地处理软件"</li>
+      <li>等待处理完成通知</li>
+    </ol>
+  </div>
+  
+  <button id="refreshStatus">刷新服务器状态</button>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

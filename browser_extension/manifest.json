@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "图片传输到本地处理",
+  "version": "1.0",
+  "description": "右键发送图片到本地处理软件",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "notifications",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "图片传输工具"
+  },
+  "options_page": "options/options.html"
+}
