@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+
+{% block title %}图片库{% endblock %}
+
+{% block content %}
+<!-- 登录提示 -->
+<div id="loginPrompt" class="login-required d-none">
+    <h3><i class="bi bi-lock"></i> 需要登录</h3>
+    <p>您需要登录后才能查看和管理您的图片</p>
+    <button class="btn btn-primary me-2" onclick="showLoginModal()">
+        <i class="bi bi-box-arrow-in-right"></i> 登录
+    </button>
+    <button class="btn btn-outline-primary" onclick="showRegisterModal()">
+        <i class="bi bi-person-plus"></i> 注册
+    </button>
+</div>
+
+<!-- 登录后的内容 -->
+<div id="loggedInContent" class="d-none">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-images"></i> 我的图片库</h1>
+        <div class="d-flex gap-2">
+            <div class="btn-group" role="group">
+                <input type="radio" class="btn-check" name="viewMode" id="gridView" checked>
+                <label class="btn btn-outline-primary" for="gridView">
+                    <i class="bi bi-grid-3x3-gap"></i> 网格
+                </label>
+                <input type="radio" class="btn-check" name="viewMode" id="listView">
+                <label class="btn btn-outline-primary" for="listView">
+                    <i class="bi bi-list"></i> 列表
+                </label>
+            </div>
+            <button class="btn btn-secondary" onclick="loadImages()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+            <button class="btn btn-success" onclick="syncToCloud()">
+                <i class="bi bi-cloud-upload"></i> 同步到云端
+            </button>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <input type="text" class="form-control" id="searchInput" placeholder="搜索页面标题或URL...">
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" id="sortSelect">
+                <option value="saved_at_desc">按保存时间（新到旧）</option>
+                <option value="saved_at_asc">按保存时间（旧到新）</option>
+                <option value="file_size_desc">按文件大小（大到小）</option>
+                <option value="file_size_asc">按文件大小（小到大）</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" id="perPageSelect">
+                <option value="20">每页20张</option>
+                <option value="50">每页50张</option>
+                <option value="100">每页100张</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="imagesContainer">
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+        </div>
+    </div>
+
+    <nav id="pagination" class="mt-4"></nav>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let currentViewMode = 'grid';
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // 监听认证状态变化
+        window.addEventListener('authStatusChanged', function (event) {
+            updatePageContent(event.detail.isLoggedIn, event.detail.user);
+        });
+
+        // 初始化页面内容
+        setTimeout(() => {
+            updatePageContent(currentUser !== null, currentUser);
+        }, 100);
+
+        // 搜索功能
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', function () {
+            if (!currentUser) return;
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadImages();
+            }, 500);
+        });
+
+        // 排序和分页选择
+        document.getElementById('sortSelect').addEventListener('change', () => {
+            if (!currentUser) return;
+            currentPage = 1;
+            loadImages();
+        });
+
+        document.getElementById('perPageSelect').addEventListener('change', () => {
+            if (!currentUser) return;
+            currentPage = 1;
+            loadImages();
+        });
+
+        // 视图模式切换
+        document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+            radio.addEventListener('change', function () {
+                if (!currentUser) return;
+                currentViewMode = this.id === 'gridView' ? 'grid' : 'list';
+                loadImages();
+            });
+        });
+    });
+
+    function updatePageContent(isLoggedIn, user) {
+        const loginPrompt = document.getElementById('loginPrompt');
+        const loggedInContent = document.getElementById('loggedInContent');
+
+        if (isLoggedIn) {
+            loginPrompt.classList.add('d-none');
+            loggedInContent.classList.remove('d-none');
+            loadImages();
+        } else {
+            loginPrompt.classList.remove('d-none');
+            loggedInContent.classList.add('d-none');
+        }
+    }
+
+    async function loadImages() {
+        if (!currentUser) return;
+
+        const container = document.getElementById('imagesContainer');
+        container.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+
+        try {
+            const perPage = document.getElementById('perPageSelect').value;
+            const response = await fetch(`/api/user/images?page=${currentPage}&per_page=${perPage}`);
+
+            if (response.status === 401) {
+                showAlert('登录已过期，请重新登录', 'warning');
+                updateNavbar(false);
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.images && data.images.length > 0) {
+                if (currentViewMode === 'grid') {
+                    renderGridView(data.images);
+                } else {
+                    renderListView(data.images);
+                }
+
+                totalPages = data.pages;
+                renderPagination();
+            } else {
+                container.innerHTML = '<div class="text-center"><p class="text-muted">暂无图片</p></div>';
+            }
+
+        } catch (error) {
+            console.error('加载图片失败:', error);
+            container.innerHTML = '<div class="text-center"><p class="text-danger">加载失败</p></div>';
+        }
+    }
+
+    function renderGridView(images) {
+        const container = document.getElementById('imagesContainer');
+        container.innerHTML = `
+        <div class="row">
+            ${images.map(image => `
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-4">
+                    <div class="card image-card h-100">
+                        <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
+                             alt="${image.page_title || '未知页面'}"
+                             onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                        <div class="card-body p-2">
+                            <h6 class="card-title small">${truncateText(image.page_title || '未知页面', 25)}</h6>
+                            <p class="card-text page-info small mb-1">
+                                <i class="bi bi-calendar"></i> ${formatDate(image.saved_at)}
+                            </p>
+                            <p class="card-text page-info small mb-1">
+                                <i class="bi bi-file-earmark"></i> ${formatFileSize(image.file_size)}
+                            </p>
+                            ${image.image_width && image.image_height ? `
+                                <p class="card-text page-info small mb-1">
+                                    <i class="bi bi-aspect-ratio"></i> ${image.image_width}×${image.image_height}
+                                </p>
+                            ` : ''}
+                            ${image.cloud_synced ? `
+                                <p class="card-text page-info small">
+                                    <i class="bi bi-cloud-check text-success"></i> 已同步
+                                </p>
+                            ` : `
+                                <p class="card-text page-info small">
+                                    <i class="bi bi-cloud text-muted"></i> 未同步
+                                </p>
+                            `}
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    }
+
+    function renderListView(images) {
+        const container = document.getElementById('imagesContainer');
+        container.innerHTML = `
+        <div class="list-group">
+            ${images.map(image => `
+                <div class="list-group-item">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <img src="${image.thumbnail_url}" class="thumbnail" style="max-width: 80px; max-height: 60px;"
+                                 alt="${image.page_title || '未知页面'}"
+                                 onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                        </div>
+                        <div class="col">
+                            <h6 class="mb-1">${image.page_title || '未知页面'}</h6>
+                            <p class="mb-1 text-muted small">${image.page_url || ''}</p>
+                            <small class="text-muted">
+                                ${formatDate(image.saved_at)} | ${formatFileSize(image.file_size)}
+                                ${image.image_width && image.image_height ? ` | ${image.image_width}×${image.image_height}` : ''}
+                                ${image.cloud_synced ? ' | <i class="bi bi-cloud-check text-success"></i> 已同步' : ' | <i class="bi bi-cloud text-muted"></i> 未同步'}
+                            </small>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-sm btn-outline-primary" 
+                                    onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                                <i class="bi bi-eye"></i> 预览
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    }
+
+    function renderPagination() {
+        const container = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let paginationHtml = '<nav><ul class="pagination justify-content-center">';
+
+        // 上一页
+        if (currentPage > 1) {
+            paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${currentPage - 1})">上一页</a></li>`;
+        }
+
+        // 页码
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+
+        for (let i = startPage; i <= endPage; i++) {
+            const active = i === currentPage ? 'active' : '';
+            paginationHtml += `<li class="page-item ${active}"><a class="page-link" href="#" onclick="changePage(${i})">${i}</a></li>`;
+        }
+
+        // 下一页
+        if (currentPage < totalPages) {
+            paginationHtml += `<li class="page-item"><a class="page-link" href="#" onclick="changePage(${currentPage + 1})">下一页</a></li>`;
+        }
+
+        paginationHtml += '</ul></nav>';
+        container.innerHTML = paginationHtml;
+    }
+
+    function changePage(page) {
+        currentPage = page;
+        loadImages();
+    }
+
+    function showImagePreview(imageUrl, title, pageUrl, imageData) {
+        const modal = new bootstrap.Modal(document.getElementById('imagePreviewModal'));
+        const previewImg = document.getElementById('previewImage');
+        const details = document.getElementById('imageDetails');
+
+        previewImg.src = imageUrl;
+        details.innerHTML = `
+        <div class="row">
+            <div class="col-md-8">
+                <h6>${title}</h6>
+                ${pageUrl ? `<p><a href="${pageUrl}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-link-45deg"></i> 访问原页面
+                </a></p>` : ''}
+            </div>
+            <div class="col-md-4">
+                <small class="text-muted">
+                    <div>保存时间: ${formatDate(imageData.saved_at)}</div>
+                    <div>文件大小: ${formatFileSize(imageData.file_size)}</div>
+                    ${imageData.image_width && imageData.image_height ? `<div>图片尺寸: ${imageData.image_width}×${imageData.image_height}</div>` : ''}
+                    <div>云端状态: ${imageData.cloud_synced ? '<i class="bi bi-cloud-check text-success"></i> 已同步' : '<i class="bi bi-cloud text-muted"></i> 未同步'}</div>
+                </small>
+            </div>
+        </div>
+    `;
+
+        modal.show();
+    }
+
+    function truncateText(text, maxLength) {
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    function formatDate(dateString) {
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+{% endblock %}

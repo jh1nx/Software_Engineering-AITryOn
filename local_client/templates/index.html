@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}图片管理系统 - 首页{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">欢迎使用图片管理系统</h1>
+            <p class="lead">这是一个用于管理从浏览器插件发送过来的图片的系统。</p>
+            <hr class="my-4">
+
+            <!-- 登录提示 -->
+            <div id="loginPrompt" class="login-required d-none">
+                <h5><i class="bi bi-info-circle"></i> 请先登录</h5>
+                <p>您需要登录后才能使用图片管理功能</p>
+                <button class="btn btn-primary me-2" onclick="showLoginModal()">
+                    <i class="bi bi-box-arrow-in-right"></i> 登录
+                </button>
+                <button class="btn btn-outline-primary" onclick="showRegisterModal()">
+                    <i class="bi bi-person-plus"></i> 注册
+                </button>
+            </div>
+
+            <!-- 登录后的内容 -->
+            <div id="loggedInContent" class="d-none">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h3><i class="bi bi-info-circle"></i> 系统状态</h3>
+                        <div id="systemStatus" class="alert alert-info">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>检查系统状态中...</span>
+                                <div class="spinner-border spinner-border-sm" role="status"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h3><i class="bi bi-bar-chart"></i> 我的统计</h3>
+                        <div id="userStatistics" class="alert alert-secondary">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="text-center">
+                                        <div class="h2" id="userImages">-</div>
+                                        <small>我的图片</small>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="text-center">
+                                        <div class="h2" id="todayImages">-</div>
+                                        <small>今日新增</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <h2><i class="bi bi-clock-history"></i> 最近保存的图片</h2>
+        <div id="recentImages" class="row">
+            <div class="col-12 text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-center mt-3" id="viewAllButton" style="display: none;">
+            <a href="{{ url_for('images_page') }}" class="btn btn-primary">
+                <i class="bi bi-images"></i> 查看所有图片
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // 监听认证状态变化
+        window.addEventListener('authStatusChanged', function (event) {
+            updatePageContent(event.detail.isLoggedIn, event.detail.user);
+        });
+
+        // 初始化页面内容
+        setTimeout(() => {
+            updatePageContent(currentUser !== null, currentUser);
+        }, 100);
+
+        // 定期刷新状态
+        setInterval(loadSystemStatus, 30000);
+    });
+
+    function updatePageContent(isLoggedIn, user) {
+        const loginPrompt = document.getElementById('loginPrompt');
+        const loggedInContent = document.getElementById('loggedInContent');
+        const viewAllButton = document.getElementById('viewAllButton');
+
+        if (isLoggedIn) {
+            loginPrompt.classList.add('d-none');
+            loggedInContent.classList.remove('d-none');
+            viewAllButton.style.display = 'block';
+
+            loadSystemStatus();
+            loadUserStatistics();
+            loadRecentImages();
+        } else {
+            loginPrompt.classList.remove('d-none');
+            loggedInContent.classList.add('d-none');
+            viewAllButton.style.display = 'none';
+
+            // 显示需要登录的提示
+            document.getElementById('recentImages').innerHTML = `
+            <div class="col-12 text-center">
+                <div class="login-required">
+                    <h5><i class="bi bi-lock"></i> 需要登录</h5>
+                    <p>登录后查看您的图片</p>
+                </div>
+            </div>
+        `;
+        }
+    }
+
+    async function loadSystemStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+
+            const statusEl = document.getElementById('systemStatus');
+            statusEl.className = 'alert alert-success';
+            statusEl.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-check-circle"></i> 系统运行正常</span>
+                <small>最后更新: ${new Date(data.timestamp).toLocaleString()}</small>
+            </div>
+        `;
+
+        } catch (error) {
+            const statusEl = document.getElementById('systemStatus');
+            statusEl.className = 'alert alert-danger';
+            statusEl.innerHTML = '<i class="bi bi-exclamation-triangle"></i> 系统状态检查失败';
+        }
+    }
+
+    async function loadUserStatistics() {
+        try {
+            const response = await fetch('/api/user/profile');
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('userImages').textContent = data.user.image_count || 0;
+
+                // 获取今日图片数量（简单实现）
+                const imagesResponse = await fetch('/api/user/images?per_page=100');
+                const imagesData = await imagesResponse.json();
+
+                const today = new Date().toDateString();
+                const todayCount = imagesData.images ? imagesData.images.filter(img =>
+                    new Date(img.saved_at).toDateString() === today
+                ).length : 0;
+
+                document.getElementById('todayImages').textContent = todayCount;
+            }
+
+        } catch (error) {
+            console.error('加载用户统计失败:', error);
+        }
+    }
+
+    async function loadRecentImages() {
+        try {
+            const response = await fetch('/api/user/images?per_page=6');
+            const data = await response.json();
+
+            const container = document.getElementById('recentImages');
+
+            if (data.images && data.images.length > 0) {
+                container.innerHTML = data.images.map(image => `
+                <div class="col-md-4 col-lg-2 mb-3">
+                    <div class="card image-card">
+                        <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
+                             alt="${image.page_title || '未知页面'}"
+                             onclick="showImagePreview('${image.preview_url}', '${image.page_title || ''}', '${image.page_url || ''}')">
+                        <div class="card-body p-2">
+                            <h6 class="card-title small">${truncateText(image.page_title || '未知页面', 20)}</h6>
+                            <p class="card-text page-info small">${formatDate(image.saved_at)}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            } else {
+                container.innerHTML = '<div class="col-12 text-center"><p class="text-muted">暂无图片</p></div>';
+            }
+
+        } catch (error) {
+            console.error('加载最近图片失败:', error);
+            if (currentUser) {
+                document.getElementById('recentImages').innerHTML =
+                    '<div class="col-12 text-center"><p class="text-danger">加载失败</p></div>';
+            }
+        }
+    }
+
+    function showImagePreview(imageUrl, title, pageUrl) {
+        const modal = new bootstrap.Modal(document.getElementById('imagePreviewModal'));
+        const previewImg = document.getElementById('previewImage');
+        const details = document.getElementById('imageDetails');
+
+        previewImg.src = imageUrl;
+        details.innerHTML = `
+        <h6>${title}</h6>
+        ${pageUrl ? `<p><a href="${pageUrl}" target="_blank" class="text-decoration-none">
+            <i class="bi bi-link-45deg"></i> 访问原页面
+        </a></p>` : ''}
+    `;
+
+        modal.show();
+    }
+
+    function truncateText(text, maxLength) {
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    function formatDate(dateString) {
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+</script>
+{% endblock %}
