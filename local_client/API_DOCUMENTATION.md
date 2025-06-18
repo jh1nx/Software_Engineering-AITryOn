@@ -224,13 +224,14 @@ Cookie: session=...
 
 **接口地址**：`POST /api/receive-image`
 
-**认证要求**：需要登录
+**认证要求**：无（支持未登录用户）
 
 **请求参数**：
 ```json
 {
   "imageData": "string",     // 必填，图片数据（base64或URL）
   "originalUrl": "string",   // 可选，图片原始URL
+  "category": "string",      // 可选，保存分类（clothes/char），默认clothes
   "pageInfo": {              // 可选，页面信息
     "url": "string",         // 页面URL
     "title": "string",       // 页面标题
@@ -244,6 +245,7 @@ Cookie: session=...
 {
   "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
   "originalUrl": "https://example.com/image.png",
+  "category": "clothes",
   "pageInfo": {
     "url": "https://example.com/page",
     "title": "示例页面",
@@ -261,12 +263,122 @@ Cookie: session=...
   "success": true,
   "taskId": "t-12345678-90ab-cdef-1234-567890abcdef",
   "imageId": "i-87654321-fedc-ba09-8765-432109876543",
-  "filename": "20250613_184530_87654321.png",
-  "fileSize": 245760
+  "filename": "clothes_20250613_184530_87654321.png",
+  "fileSize": 245760,
+  "category": "clothes",
+  "isLoggedIn": false,
+  "message": "图片已保存到默认目录的clothes文件夹，建议登录以便管理您的图片"
 }
 ```
 
-### 8. 获取用户图片列表
+### 8. 剪切板图片上传
+从用户剪切板读取图片数据并保存到指定分类。
+
+**接口地址**：`POST /api/upload-clipboard`
+
+**认证要求**：无（支持未登录用户）
+
+**请求参数**：
+```json
+{
+  "imageData": "string",     // 必填，剪切板图片数据（base64格式）
+  "category": "string"       // 可选，保存分类（clothes/char），默认clothes
+}
+```
+
+**请求示例**：
+```json
+{
+  "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "category": "char"
+}
+```
+
+**响应示例**：
+```json
+{
+  "success": true,
+  "taskId": "t-12345678-90ab-cdef-1234-567890abcdef",
+  "imageId": "i-87654321-fedc-ba09-8765-432109876543",
+  "filename": "char_20250613_184530_87654321.png",
+  "fileSize": 245760,
+  "category": "char",
+  "isLoggedIn": true,
+  "message": "剪切板图片已保存到 char 文件夹"
+}
+```
+
+**错误响应**：
+```json
+{
+  "success": false,
+  "error": "剪切板中没有图片数据"
+}
+```
+
+### 9. 文件上传
+上传本地图片文件到服务器。
+
+**接口地址**：`POST /api/upload-file`
+
+**认证要求**：无（支持未登录用户）
+
+**Content-Type**: `multipart/form-data`
+
+**请求参数**：
+- `file`: 图片文件（必填）
+- `category`: 保存分类，可选值 "clothes" 或 "char"，默认 "clothes"
+
+**请求示例**：
+```http
+POST /api/upload-file HTTP/1.1
+Host: localhost:8080
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="example.png"
+Content-Type: image/png
+
+[图片二进制数据]
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="category"
+
+clothes
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+```
+
+**支持的文件格式**：
+- PNG (.png)
+- JPEG (.jpg, .jpeg)
+- GIF (.gif)
+- WebP (.webp)
+
+**文件大小限制**：最大 10MB
+
+**响应示例**：
+```json
+{
+  "success": true,
+  "taskId": "t-12345678-90ab-cdef-1234-567890abcdef",
+  "imageId": "i-87654321-fedc-ba09-8765-432109876543",
+  "filename": "clothes_20250613_184530_87654321.png",
+  "fileSize": 245760,
+  "category": "clothes",
+  "originalFilename": "example.png",
+  "isLoggedIn": true,
+  "message": "文件已上传到 clothes 文件夹"
+}
+```
+
+**错误响应**：
+```json
+{
+  "success": false,
+  "error": "不支持的文件格式，请上传 PNG、JPG、JPEG、GIF 或 WebP 格式的图片"
+}
+```
+
+### 10. 获取用户图片列表
 获取当前用户的图片列表。
 
 **接口地址**：`GET /api/user/images`
@@ -291,7 +403,7 @@ Cookie: session=...
     {
       "id": "i-87654321-fedc-ba09-8765-432109876543",
       "user_id": "default-user-12345678",
-      "filename": "20250613_184530_87654321.png",
+      "filename": "clothes_20250613_184530_87654321.png",
       "original_url": "https://example.com/image.png",
       "page_url": "https://example.com/page",
       "page_title": "示例页面",
@@ -301,12 +413,13 @@ Cookie: session=...
       "image_height": 600,
       "context_info": {
         "alt": "示例图片",
-        "caption": "这是一张示例图片"
+        "caption": "这是一张示例图片",
+        "category": "clothes"
       },
       "status": "saved",
       "cloud_synced": false,
-      "preview_url": "/api/user/default-user-12345678/images/20250613_184530_87654321.png",
-      "thumbnail_url": "/api/user/default-user-12345678/thumbnails/20250613_184530_87654321.png"
+      "preview_url": "/api/user/default-user-12345678/images/clothes_20250613_184530_87654321.png",
+      "thumbnail_url": "/api/user/default-user-12345678/thumbnails/clothes_20250613_184530_87654321.png"
     }
   ],
   "total": 25,
@@ -316,7 +429,7 @@ Cookie: session=...
 }
 ```
 
-### 9. 获取用户图片文件
+### 11. 获取用户图片文件
 获取用户的具体图片文件。
 
 **接口地址**：`GET /api/user/{user_id}/images/{filename}`
@@ -325,7 +438,7 @@ Cookie: session=...
 
 **请求示例**：
 ```http
-GET /api/user/default-user-12345678/images/20250613_184530_87654321.png HTTP/1.1
+GET /api/user/default-user-12345678/images/clothes_20250613_184530_87654321.png HTTP/1.1
 Host: localhost:8080
 Cookie: session=...
 ```
@@ -339,7 +452,28 @@ Cookie: session=...
 }
 ```
 
-### 10. 获取用户缩略图
+### 12. 按分类获取用户图片文件
+按指定分类获取用户图片文件。
+
+**接口地址**：`GET /api/user/{user_id}/images/{category}/{filename}`
+
+**认证要求**：需要登录（只能访问自己的图片）
+
+**请求参数**：
+- `user_id`: 用户ID
+- `category`: 图片分类（clothes 或 char）
+- `filename`: 文件名
+
+**请求示例**：
+```http
+GET /api/user/default-user-12345678/images/char/char_20250613_184530_87654321.png HTTP/1.1
+Host: localhost:8080
+Cookie: session=...
+```
+
+**响应**：返回图片文件二进制数据
+
+### 13. 获取用户缩略图
 获取用户图片的缩略图。
 
 **接口地址**：`GET /api/user/{user_id}/thumbnails/{filename}`
@@ -348,7 +482,7 @@ Cookie: session=...
 
 **请求示例**：
 ```http
-GET /api/user/default-user-12345678/thumbnails/20250613_184530_87654321.png HTTP/1.1
+GET /api/user/default-user-12345678/thumbnails/clothes_20250613_184530_87654321.png HTTP/1.1
 Host: localhost:8080
 Cookie: session=...
 ```
@@ -359,7 +493,7 @@ Cookie: session=...
 
 ## 任务管理接口
 
-### 11. 获取任务状态
+### 14. 获取任务状态
 获取图片处理任务的状态。
 
 **接口地址**：`GET /api/task/{task_id}`
@@ -396,7 +530,7 @@ Host: localhost:8080
 
 ## 云端同步接口
 
-### 12. 同步数据到云端
+### 15. 同步数据到云端
 将用户数据同步到云端服务器（当前已禁用）。
 
 **接口地址**：`POST /api/cloud/sync`
@@ -435,7 +569,15 @@ Host: localhost:8080
 - `"用户名或密码错误"`: 登录时凭据错误
 - `"用户不存在"`: 查询的用户不存在
 - `"缺少图片数据"`: 上传图片时缺少图片数据
+- `"剪切板中没有图片数据"`: 剪切板上传时无有效图片数据
+- `"没有选择文件"`: 文件上传时未选择文件
+- `"文件名为空"`: 文件上传时文件名为空
+- `"不支持的文件格式"`: 上传的文件格式不在支持列表中
+- `"文件大小不能超过10MB"`: 上传文件超过大小限制
+- `"无效的分类"`: 指定的分类参数无效
 - `"保存图片失败"`: 图片保存过程中出错
+- `"保存剪切板图片失败"`: 剪切板图片保存失败
+- `"保存上传文件失败"`: 文件上传保存失败
 - `"任务不存在"`: 查询的任务ID不存在
 - `"图片不存在"`: 请求的图片文件不存在
 - `"云端同步功能已禁用"`: 云端同步功能未启用
@@ -465,41 +607,45 @@ curl -X GET http://localhost:8080/api/auth/check \
   -b cookies.txt
 ```
 
-4. **获取用户资料**
+4. **剪切板图片上传**
+```bash
+curl -X POST http://localhost:8080/api/upload-clipboard \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "category": "char"
+  }'
+```
+
+5. **文件上传**
+```bash
+curl -X POST http://localhost:8080/api/upload-file \
+  -b cookies.txt \
+  -F "file=@/path/to/image.png" \
+  -F "category=clothes"
+```
+
+6. **获取用户资料**
 ```bash
 curl -X GET http://localhost:8080/api/user/profile \
   -b cookies.txt
 ```
 
-5. **获取图片列表**
+7. **获取图片列表**
 ```bash
 curl -X GET "http://localhost:8080/api/user/images?per_page=5" \
   -b cookies.txt
 ```
 
-6. **上传图片**
-```bash
-curl -X POST http://localhost:8080/api/receive-image \
-  -H "Content-Type: application/json" \
-  -b cookies.txt \
-  -d '{
-    "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-    "originalUrl": "https://example.com/test.png",
-    "pageInfo": {
-      "url": "https://example.com",
-      "title": "测试页面"
-    }
-  }'
-```
-
-7. **下载图片**
+8. **下载图片**
 ```bash
 curl -X GET "http://localhost:8080/api/user/{user_id}/images/{filename}" \
   -b cookies.txt \
   -o downloaded_image.png
 ```
 
-8. **用户登出**
+9. **用户登出**
 ```bash
 curl -X POST http://localhost:8080/api/logout \
   -b cookies.txt
@@ -527,7 +673,7 @@ curl -X POST http://localhost:8080/api/logout \
 {
   "id": "string",                // 图片唯一ID
   "user_id": "string",           // 所属用户ID
-  "filename": "string",          // 文件名
+  "filename": "string",          // 文件名（包含分类前缀）
   "original_url": "string",      // 原始URL
   "page_url": "string",          // 来源页面URL
   "page_title": "string",        // 来源页面标题
@@ -535,7 +681,7 @@ curl -X POST http://localhost:8080/api/logout \
   "file_size": "integer",        // 文件大小（字节）
   "image_width": "integer",      // 图片宽度
   "image_height": "integer",     // 图片高度
-  "context_info": "object",      // 上下文信息
+  "context_info": "object",      // 上下文信息（包含分类等）
   "status": "string",            // 状态（saved等）
   "cloud_synced": "boolean",     // 是否已云端同步
   "preview_url": "string",       // 预览URL
@@ -547,6 +693,7 @@ curl -X POST http://localhost:8080/api/logout \
 ```json
 {
   "task_id": "string",           // 任务唯一ID
+  "user_id": "string",           // 所属用户ID
   "status": "string",            // 任务状态（processing/completed）
   "created_at": "datetime",      // 创建时间
   "updated_at": "datetime",      // 更新时间
@@ -556,15 +703,55 @@ curl -X POST http://localhost:8080/api/logout \
 
 ---
 
+## 分类管理说明
+
+### 分类定义
+系统支持两种图片分类：
+
+1. **clothes（服装类）**
+   - 用途：服装、配饰等可穿戴物品
+   - 应用场景：虚拟试衣、服装搭配等
+   - 文件名前缀：`clothes_`
+
+2. **char（角色类）**
+   - 用途：人物角色、模特等
+   - 应用场景：人物建模、角色设计等
+   - 文件名前缀：`char_`
+
+### 分类规则
+- 如果不指定分类，默认保存到 `clothes` 分类
+- 无效的分类参数会自动降级为 `clothes`
+- 每个用户目录下自动创建分类子目录
+- 文件名包含分类前缀便于识别
+
+### 目录结构
+```
+saved_images/
+├── {user_id}/
+│   ├── clothes/
+│   │   ├── clothes_20250613_184530_12345678.png
+│   │   └── clothes_20250613_184531_87654321.jpg
+│   └── char/
+│       ├── char_20250613_184532_abcdefgh.png
+│       └── char_20250613_184533_ijklmnop.webp
+```
+
+---
+
 ## 注意事项
 
 1. **会话管理**: 使用Cookie进行会话管理，登录后需要在后续请求中携带Cookie
 2. **权限控制**: 用户只能访问自己的图片和数据
-3. **文件存储**: 每个用户的图片存储在独立的目录中
+3. **文件存储**: 每个用户的图片存储在独立的目录中，按分类组织
 4. **数据库迁移**: 系统会自动检测并迁移旧版本的数据库结构
 5. **云端同步**: 当前版本云端同步功能已禁用
 6. **图片格式**: 支持PNG、JPG、JPEG、GIF、WEBP格式
-7. **文件大小**: 目前无文件大小限制，建议合理使用
+7. **文件大小**: 单个文件最大10MB
+8. **分类验证**: 系统会验证分类参数，无效分类自动降级为 `clothes`
+9. **剪切板权限**: 剪切板功能需要用户授权，某些浏览器可能有限制
+10. **批量上传**: 建议单次上传文件数量不超过 20 个
+11. **目录自动创建**: 系统会自动创建所需的分类目录
+12. **默认用户**: 未登录用户的图片保存到默认用户目录，建议登录管理
 
 ---
 
@@ -577,3 +764,41 @@ curl -X POST http://localhost:8080/api/logout \
 - 实现任务状态跟踪
 - 支持数据库自动迁移
 - 预留云端同步接口
+
+### v1.1.0 (2025-06-20)
+- 添加剪切板图片上传功能
+- 添加文件上传功能
+- 支持按分类保存图片（clothes/char）
+- 优化图片接收接口，支持未登录用户
+- 添加按分类获取图片文件的接口
+- 增强错误处理和验证机制
+- 更新API文档，添加新功能详细说明
+
+### v1.2.0 (计划中)
+- 添加图片编辑功能
+- 支持批量操作
+- 添加图片标签系统
+- 优化缩略图生成
+- 增强搜索和过滤功能
+
+---
+
+## 测试与开发
+
+### API测试工具
+推荐使用以下工具进行API测试：
+- **Postman**: 图形化接口测试
+- **curl**: 命令行测试
+- **Python requests**: 脚本化测试
+
+### 开发环境设置
+1. 确保Python 3.7+已安装
+2. 安装依赖：`pip install flask requests pillow`
+3. 启动服务器：`python app.py`
+4. 访问WebUI：`http://localhost:8080`
+
+### 调试技巧
+- 查看服务器日志获取详细错误信息
+- 使用浏览器开发者工具检查请求和响应
+- 验证文件权限和目录结构
+- 检查数据库状态和记录

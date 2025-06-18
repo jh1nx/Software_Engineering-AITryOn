@@ -13,7 +13,7 @@
             <!-- 登录提示 -->
             <div id="loginPrompt" class="login-required d-none">
                 <h5><i class="bi bi-info-circle"></i> 请先登录</h5>
-                <p>您需要登录后才能使用图片管理功能</p>
+                <p>您可以不登录直接使用上传功能，图片会保存到默认位置</p>
                 <button class="btn btn-primary me-2" onclick="showLoginModal()">
                     <i class="bi bi-box-arrow-in-right"></i> 登录
                 </button>
@@ -59,6 +59,78 @@
     </div>
 </div>
 
+<!-- 图片上传功能区域 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <h2><i class="bi bi-cloud-upload"></i> 图片上传</h2>
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <!-- 剪切板上传 -->
+                    <div class="col-md-6">
+                        <div class="upload-section border-end pe-4">
+                            <h5><i class="bi bi-clipboard"></i> 从剪切板上传</h5>
+                            <p class="text-muted">复制图片到剪切板，然后点击下方按钮上传</p>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">保存分类:</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="clipboardCategory" id="clipboardClothes" value="clothes" checked>
+                                    <label class="btn btn-outline-primary" for="clipboardClothes">
+                                        <i class="bi bi-bag"></i> 服装 (Clothes)
+                                    </label>
+                                    <input type="radio" class="btn-check" name="clipboardCategory" id="clipboardChar" value="char">
+                                    <label class="btn btn-outline-secondary" for="clipboardChar">
+                                        <i class="bi bi-person"></i> 角色 (Characters)
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <button class="btn btn-primary w-100" onclick="uploadFromClipboard()">
+                                <i class="bi bi-clipboard-check"></i> 从剪切板上传
+                            </button>
+                            
+                            <div id="clipboardStatus" class="mt-3"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 文件上传 -->
+                    <div class="col-md-6">
+                        <div class="upload-section ps-4">
+                            <h5><i class="bi bi-file-earmark-image"></i> 文件上传</h5>
+                            <p class="text-muted">选择本地图片文件上传</p>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">保存分类:</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="fileCategory" id="fileClothes" value="clothes" checked>
+                                    <label class="btn btn-outline-primary" for="fileClothes">
+                                        <i class="bi bi-bag"></i> 服装 (Clothes)
+                                    </label>
+                                    <input type="radio" class="btn-check" name="fileCategory" id="fileChar" value="char">
+                                    <label class="btn btn-outline-secondary" for="fileChar">
+                                        <i class="bi bi-person"></i> 角色 (Characters)
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <input type="file" class="form-control" id="fileInput" accept="image/*" multiple>
+                            </div>
+                            
+                            <button class="btn btn-success w-100" onclick="uploadFiles()">
+                                <i class="bi bi-upload"></i> 上传文件
+                            </button>
+                            
+                            <div id="fileUploadStatus" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row mt-4">
     <div class="col-12">
         <h2><i class="bi bi-clock-history"></i> 最近保存的图片</h2>
@@ -86,9 +158,11 @@
             updatePageContent(event.detail.isLoggedIn, event.detail.user);
         });
 
-        // 初始化页面内容
+        // 初始化页面内容 - 无论是否登录都显示内容
         setTimeout(() => {
             updatePageContent(currentUser !== null, currentUser);
+            // 总是尝试加载最近图片
+            loadRecentImages();
         }, 100);
 
         // 定期刷新状态
@@ -107,21 +181,203 @@
 
             loadSystemStatus();
             loadUserStatistics();
-            loadRecentImages();
         } else {
             loginPrompt.classList.remove('d-none');
             loggedInContent.classList.add('d-none');
             viewAllButton.style.display = 'none';
+        }
+    }
 
-            // 显示需要登录的提示
-            document.getElementById('recentImages').innerHTML = `
-            <div class="col-12 text-center">
-                <div class="login-required">
-                    <h5><i class="bi bi-lock"></i> 需要登录</h5>
-                    <p>登录后查看您的图片</p>
-                </div>
-            </div>
-        `;
+    // 从剪切板上传图片
+    async function uploadFromClipboard() {
+        const statusDiv = document.getElementById('clipboardStatus');
+        const category = document.querySelector('input[name="clipboardCategory"]:checked').value;
+        
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-clock"></i> 正在读取剪切板...</div>';
+        
+        try {
+            if (!navigator.clipboard) {
+                throw new Error('当前浏览器不支持剪切板API');
+            }
+            
+            const clipboardItems = await navigator.clipboard.read();
+            let imageFound = false;
+            
+            for (const clipboardItem of clipboardItems) {
+                for (const type of clipboardItem.types) {
+                    if (type.startsWith('image/')) {
+                        const blob = await clipboardItem.getType(type);
+                        const reader = new FileReader();
+                        
+                        reader.onload = async function(e) {
+                            const imageData = e.target.result;
+                            await uploadImageData(imageData, category, 'clipboard');
+                        };
+                        
+                        reader.readAsDataURL(blob);
+                        imageFound = true;
+                        break;
+                    }
+                }
+                if (imageFound) break;
+            }
+            
+            if (!imageFound) {
+                statusDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> 剪切板中没有图片</div>';
+            }
+            
+        } catch (error) {
+            console.error('剪切板读取失败:', error);
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> 剪切板读取失败: ${error.message}</div>`;
+        }
+    }
+
+    // 上传图片数据的通用函数
+    async function uploadImageData(imageData, category, source) {
+        const statusDiv = source === 'clipboard' ? 
+            document.getElementById('clipboardStatus') : 
+            document.getElementById('fileUploadStatus');
+        
+        try {
+            statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-cloud-upload"></i> 正在保存图片...</div>';
+            
+            const response = await fetch('/api/upload-clipboard', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    imageData: imageData,
+                    category: category
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> ${data.message}
+                        <br><small>文件名: ${data.filename}</small>
+                        <br><small>大小: ${formatFileSize(data.fileSize)}</small>
+                        <br><small>分类: ${data.category}</small>
+                        ${!data.isLoggedIn ? '<br><small class="text-warning">建议登录以便管理您的图片</small>' : ''}
+                    </div>
+                `;
+                
+                // 刷新最近图片
+                setTimeout(() => {
+                    loadRecentImages();
+                }, 1000);
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> 上传失败: ${data.error}</div>`;
+            }
+            
+        } catch (error) {
+            console.error('上传图片失败:', error);
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> 上传失败: ${error.message}</div>`;
+        }
+    }
+
+    // 上传文件
+    async function uploadFiles() {
+        const fileInput = document.getElementById('fileInput');
+        const statusDiv = document.getElementById('fileUploadStatus');
+        const category = document.querySelector('input[name="fileCategory"]:checked').value;
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            statusDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> 请选择要上传的文件</div>';
+            return;
+        }
+        
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-clock"></i> 正在上传文件...</div>';
+        
+        const files = Array.from(fileInput.files);
+        let successCount = 0;
+        let failCount = 0;
+        let results = [];
+        
+        for (const file of files) {
+            try {
+                // 验证文件大小 (10MB限制)
+                if (file.size > 10 * 1024 * 1024) {
+                    failCount++;
+                    results.push(`文件 ${file.name} 过大 (>10MB)`);
+                    continue;
+                }
+                
+                // 验证文件类型
+                const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    failCount++;
+                    results.push(`文件 ${file.name} 格式不支持`);
+                    continue;
+                }
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('category', category);
+                
+                const response = await fetch('/api/upload-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    successCount++;
+                    results.push(`✓ ${file.name} 上传成功`);
+                } else {
+                    failCount++;
+                    results.push(`✗ ${file.name}: ${data.error}`);
+                    console.error(`上传文件 ${file.name} 失败:`, data.error);
+                }
+            } catch (error) {
+                failCount++;
+                results.push(`✗ ${file.name}: ${error.message}`);
+                console.error(`上传文件 ${file.name} 失败:`, error);
+            }
+        }
+        
+        // 显示详细结果
+        let message = '';
+        if (successCount > 0) {
+            message += `<div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> 成功上传 ${successCount} 个文件到 ${category} 文件夹
+                ${!window.currentUser ? '<br><small class="text-warning">建议登录以便管理您的图片</small>' : ''}
+            </div>`;
+        }
+        if (failCount > 0) {
+            message += `<div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> ${failCount} 个文件上传失败
+                <details class="mt-2">
+                    <summary>查看详情</summary>
+                    <ul class="mt-2 mb-0">
+                        ${results.filter(r => r.includes('✗')).map(r => `<li>${r}</li>`).join('')}
+                    </ul>
+                </details>
+            </div>`;
+        }
+        
+        statusDiv.innerHTML = message;
+        
+        // 清空文件选择
+        fileInput.value = '';
+        
+        // 刷新最近图片
+        if (successCount > 0) {
+            setTimeout(() => {
+                loadRecentImages();
+            }, 1000);
         }
     }
 
@@ -173,51 +429,119 @@
 
     async function loadRecentImages() {
         try {
-            const response = await fetch('/api/user/images?per_page=6');
-            const data = await response.json();
+            let response;
+            let data;
+            
+            // 如果用户已登录，获取用户图片；否则显示提示信息
+            if (currentUser) {
+                response = await fetch('/api/user/images?per_page=6');
+                data = await response.json();
+            } else {
+                // 未登录用户显示上传提示
+                const container = document.getElementById('recentImages');
+                container.innerHTML = `
+                    <div class="col-12 text-center">
+                        <div class="login-required">
+                            <h5><i class="bi bi-info-circle"></i> 欢迎使用图片管理系统</h5>
+                            <p>您可以直接使用上传功能，无需登录。登录后可以查看和管理您的图片。</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
 
             const container = document.getElementById('recentImages');
 
             if (data.images && data.images.length > 0) {
-                container.innerHTML = data.images.map(image => `
-                <div class="col-md-4 col-lg-2 mb-3">
-                    <div class="card image-card">
-                        <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
-                             alt="${image.page_title || '未知页面'}"
-                             onclick="showImagePreview('${image.preview_url}', '${image.page_title || ''}', '${image.page_url || ''}')">
-                        <div class="card-body p-2">
-                            <h6 class="card-title small">${truncateText(image.page_title || '未知页面', 20)}</h6>
-                            <p class="card-text page-info small">${formatDate(image.saved_at)}</p>
+                container.innerHTML = data.images.map((image, index) => {
+                    const category = image.context_info?.category || 'unknown';
+                    const categoryIcon = category === 'char' ? 'person' : 'bag';
+                    const categoryColor = category === 'char' ? 'secondary' : 'primary';
+                    
+                    const escapedTitle = escapeHtml(image.page_title || '未知页面');
+                    const escapedUrl = escapeHtml(image.page_url || '');
+                    const imageIndex = `recentImage_${index}`;
+                    
+                    // 将图片数据存储在全局变量中，避免在HTML属性中传递复杂对象
+                    window.recentImagesData = window.recentImagesData || {};
+                    window.recentImagesData[imageIndex] = image;
+                    
+                    return `
+                    <div class="col-md-4 col-lg-2 mb-3">
+                        <div class="card image-card">
+                            <div class="position-relative">
+                                <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
+                                     alt="${escapedTitle}"
+                                     onclick="showImagePreviewByIndex('${imageIndex}')">
+                                <span class="badge bg-${categoryColor} position-absolute top-0 end-0 m-1">
+                                    <i class="bi bi-${categoryIcon}"></i> ${category}
+                                </span>
+                            </div>
+                            <div class="card-body p-2">
+                                <h6 class="card-title small">${truncateText(escapedTitle, 20)}</h6>
+                                <p class="card-text page-info small">${formatDate(image.saved_at)}</p>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `).join('');
+                `}).join('');
             } else {
                 container.innerHTML = '<div class="col-12 text-center"><p class="text-muted">暂无图片</p></div>';
             }
 
         } catch (error) {
             console.error('加载最近图片失败:', error);
+            const container = document.getElementById('recentImages');
             if (currentUser) {
-                document.getElementById('recentImages').innerHTML =
-                    '<div class="col-12 text-center"><p class="text-danger">加载失败</p></div>';
+                container.innerHTML = '<div class="col-12 text-center"><p class="text-danger">加载失败</p></div>';
             }
         }
     }
 
-    function showImagePreview(imageUrl, title, pageUrl) {
+    // 新的图片预览函数，通过索引获取图片数据
+    function showImagePreviewByIndex(imageIndex) {
+        const imageData = window.recentImagesData && window.recentImagesData[imageIndex];
+        if (imageData) {
+            showImagePreview(
+                imageData.preview_url,
+                imageData.page_title || '未知页面',
+                imageData.page_url || '',
+                imageData
+            );
+        }
+    }
+
+    function showImagePreview(imageUrl, title, pageUrl, imageData = {}) {
         const modal = new bootstrap.Modal(document.getElementById('imagePreviewModal'));
         const previewImg = document.getElementById('previewImage');
         const details = document.getElementById('imageDetails');
 
         previewImg.src = imageUrl;
-        details.innerHTML = `
-        <h6>${title}</h6>
-        ${pageUrl ? `<p><a href="${pageUrl}" target="_blank" class="text-decoration-none">
-            <i class="bi bi-link-45deg"></i> 访问原页面
-        </a></p>` : ''}
-    `;
-
+        
+        let detailsHtml = `<h6>${escapeHtml(title)}</h6>`;
+        
+        if (pageUrl) {
+            detailsHtml += `<p><a href="${escapeHtml(pageUrl)}" target="_blank" class="text-decoration-none">
+                <i class="bi bi-link-45deg"></i> 访问原页面
+            </a></p>`;
+        }
+        
+        // 如果有图片数据，显示更多信息
+        if (imageData.saved_at) {
+            detailsHtml += `<div class="mt-2"><small class="text-muted">`;
+            detailsHtml += `保存时间: ${formatDate(imageData.saved_at)}<br>`;
+            if (imageData.file_size) {
+                detailsHtml += `文件大小: ${formatFileSize(imageData.file_size)}<br>`;
+            }
+            if (imageData.image_width && imageData.image_height) {
+                detailsHtml += `图片尺寸: ${imageData.image_width}×${imageData.image_height}<br>`;
+            }
+            if (imageData.context_info && imageData.context_info.category) {
+                detailsHtml += `分类: ${imageData.context_info.category}<br>`;
+            }
+            detailsHtml += `</small></div>`;
+        }
+        
+        details.innerHTML = detailsHtml;
         modal.show();
     }
 
@@ -228,5 +552,42 @@
     function formatDate(dateString) {
         return new Date(dateString).toLocaleString('zh-CN');
     }
+
+    function formatFileSize(size) {
+        if (size < 1024) return size + ' B';
+        if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+        return (size / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // 添加HTML转义函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 </script>
+
+<style>
+    .upload-section {
+        min-height: 300px;
+    }
+    
+    .btn-group input[type="radio"] {
+        display: none;
+    }
+    
+    .btn-group .btn {
+        border-radius: 0;
+    }
+    
+    .btn-group .btn:first-child {
+        border-top-left-radius: 0.375rem;
+        border-bottom-left-radius: 0.375rem;
+    }
+    
+    .btn-group .btn:last-child {
+        border-top-right-radius: 0.375rem;
+        border-bottom-right-radius: 0.375rem;
+    }
+</style>
 {% endblock %}

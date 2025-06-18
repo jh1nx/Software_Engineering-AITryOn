@@ -38,6 +38,9 @@ class ImageDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # 检查并修复tasks表结构
+        self.check_and_fix_tasks_table(cursor)
+        
         # 检查是否需要迁移数据库
         cursor.execute("PRAGMA table_info(images)")
         columns = [column[1] for column in cursor.fetchall()]
@@ -128,6 +131,7 @@ class ImageDatabase:
                 )
             ''')
         
+        # 确保tasks表结构正确
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tasks (
                 task_id TEXT PRIMARY KEY,
@@ -140,45 +144,82 @@ class ImageDatabase:
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         ''')
+        
         conn.commit()
         conn.close()
     
-    def migrate_database(self, cursor):
-        """迁移旧数据库结构"""
+    def check_and_fix_tasks_table(self, cursor):
+        """检查并修复tasks表结构"""
         try:
-            # 检查旧表结构
-            cursor.execute("PRAGMA table_info(images)")
-            print("旧表结构:", cursor.fetchall())
+            # 检查tasks表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
+            table_exists = cursor.fetchone()
+            
+            if table_exists:
+                # 检查tasks表的列结构
+                cursor.execute("PRAGMA table_info(tasks)")
+                columns = [column[1] for column in cursor.fetchall()]
+                print(f"现有tasks表列: {columns}")
+                
+                # 如果缺少user_id列，需要重建表
+                if 'user_id' not in columns:
+                    print("tasks表缺少user_id列，开始重建...")
+                    
+                    # 备份现有数据
+                    cursor.execute("SELECT * FROM tasks")
+                    old_tasks = cursor.fetchall()
+                    
+                    # 删除旧表
+                    cursor.execute("DROP TABLE tasks")
+                    
+                    # 创建新表
+                    cursor.execute('''
+                        CREATE TABLE tasks (
+                            task_id TEXT PRIMARY KEY,
+                            user_id TEXT NOT NULL DEFAULT 'default-user',
+                            status TEXT DEFAULT 'processing',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            image_id TEXT,
+                            FOREIGN KEY (image_id) REFERENCES images (id),
+                            FOREIGN KEY (user_id) REFERENCES users (user_id)
+                        )
+                    ''')
+                    
+                    # 恢复数据，为旧任务分配默认用户ID
+                    if old_tasks:
+                        # 获取或创建默认用户
+                        cursor.execute("SELECT user_id FROM users LIMIT 1")
+                        default_user = cursor.fetchone()
+                        default_user_id = default_user[0] if default_user else self.get_or_create_default_user(cursor)
+                        
+                        for task in old_tasks:
+                            if len(task) >= 5:  # 确保有足够的列
+                                cursor.execute('''
+                                    INSERT INTO tasks (task_id, user_id, status, created_at, updated_at, image_id)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                ''', (task[0], default_user_id, task[1], task[2], task[3], task[4] if len(task) > 4 else None))
+                    
+                    print("tasks表重建完成")
+                else:
+                    print("tasks表结构正确")
+            else:
+                print("tasks表不存在，将在后续创建")
+                
         except Exception as e:
-            print(f"检查旧表结构失败: {e}")
+            print(f"检查tasks表结构失败: {e}")
     
-    def create_default_user(self, cursor):
-        """为旧数据创建默认用户"""
-        default_user_id = "default-user-" + str(uuid.uuid4())[:8]
-        default_password_hash = hashlib.sha256("admin123".encode()).hexdigest()
+    def get_or_create_default_user(self, cursor):
+        """获取或创建默认用户"""
+        # 先尝试获取现有的默认用户
+        cursor.execute("SELECT user_id FROM users WHERE username LIKE 'admin%' OR user_id LIKE 'default-user%' LIMIT 1")
+        result = cursor.fetchone()
+        if result:
+            return result[0]
         
-        cursor.execute('''
-            INSERT OR IGNORE INTO users (user_id, username, email, password_hash)
-            VALUES (?, ?, ?, ?)
-        ''', (default_user_id, "admin", "admin@local.com", default_password_hash))
-        
-        # 创建默认用户目录
-        user_dir = BASE_SAVE_DIR / default_user_id
-        user_dir.mkdir(exist_ok=True)
-        
-        # 移动旧图片到用户目录
-        try:
-            for file in BASE_SAVE_DIR.iterdir():
-                if file.is_file() and file.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
-                    new_path = user_dir / file.name
-                    if not new_path.exists():
-                        file.rename(new_path)
-        except Exception as e:
-            print(f"移动旧图片失败: {e}")
-        
-        print(f"创建默认用户: admin/admin123, ID: {default_user_id}")
-        return default_user_id
-    
+        # 如果没有，创建新的默认用户
+        return self.create_default_user(cursor)
+
     def create_user(self, username, email, password):
         """创建新用户"""
         user_id = str(uuid.uuid4())
@@ -260,37 +301,58 @@ class ImageDatabase:
     def create_task(self, task_id, user_id, image_id):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO tasks (task_id, user_id, image_id) VALUES (?, ?, ?)
-        ''', (task_id, user_id, image_id))
-        conn.commit()
-        conn.close()
+        try:
+            cursor.execute('''
+                INSERT INTO tasks (task_id, user_id, image_id, status, created_at, updated_at) 
+                VALUES (?, ?, ?, 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ''', (task_id, user_id, image_id))
+            conn.commit()
+        except Exception as e:
+            print(f"创建任务失败: {e}")
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def update_task_status(self, task_id, status):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?
-        ''', (status, task_id))
-        conn.commit()
-        conn.close()
+        try:
+            cursor.execute('''
+                UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ?
+            ''', (status, task_id))
+            if cursor.rowcount == 0:
+                print(f"警告: 任务 {task_id} 不存在")
+            conn.commit()
+        except Exception as e:
+            print(f"更新任务状态失败: {e}")
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     
     def get_task_status(self, task_id):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM tasks WHERE task_id = ?', (task_id,))
-        result = cursor.fetchone()
-        conn.close()
-        if result:
-            return {
-                'task_id': result[0],
-                'status': result[1],
-                'created_at': result[2],
-                'updated_at': result[3],
-                'image_id': result[4]
-            }
-        return None
-    
+        try:
+            cursor.execute('SELECT task_id, user_id, status, created_at, updated_at, image_id FROM tasks WHERE task_id = ?', (task_id,))
+            result = cursor.fetchone()
+            if result:
+                return {
+                    'task_id': result[0],
+                    'user_id': result[1],
+                    'status': result[2],
+                    'created_at': result[3],
+                    'updated_at': result[4],
+                    'image_id': result[5]
+                }
+            return None
+        except Exception as e:
+            print(f"获取任务状态失败: {e}")
+            return None
+        finally:
+            conn.close()
+
     def get_all_images(self, limit=50, offset=0):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -442,17 +504,56 @@ def check_auth():
     
     return jsonify({'authenticated': False})
 
-def get_user_save_dir(user_id):
-    """获取用户专属保存目录"""
+def get_user_save_dir(user_id, category='clothes'):
+    """获取用户专属保存目录，支持分类"""
     user_dir = BASE_SAVE_DIR / user_id
     user_dir.mkdir(exist_ok=True)
-    return user_dir
+    
+    # 创建分类子目录
+    category_dir = user_dir / category
+    category_dir.mkdir(exist_ok=True)
+    
+    return category_dir
 
-def save_image_from_data(image_data, original_url, page_info, user_id):
-    """保存图片数据到用户目录"""
+def get_or_create_default_user():
+    """获取或创建默认用户，用于未登录用户"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 查找默认用户
+    cursor.execute("SELECT user_id FROM users WHERE username = 'default_user' LIMIT 1")
+    result = cursor.fetchone()
+    
+    if result:
+        conn.close()
+        return result[0]
+    
+    # 创建默认用户
+    default_user_id = "default-user-" + str(uuid.uuid4())[:8]
+    cursor.execute('''
+        INSERT INTO users (user_id, username, email, password_hash, is_active)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (default_user_id, 'default_user', 'default@local.app', 'default_hash', 1))
+    
+    conn.commit()
+    conn.close()
+    
+    # 创建默认用户目录
+    default_dir = BASE_SAVE_DIR / default_user_id
+    default_dir.mkdir(exist_ok=True)
+    (default_dir / "clothes").mkdir(exist_ok=True)
+    
+    return default_user_id
+
+def save_image_from_data(image_data, original_url, page_info, user_id, category='clothes'):
+    """保存图片数据到用户目录的指定分类文件夹"""
     try:
+        print(f"开始保存图片: 用户ID={user_id}, 分类={category}")
+        
         image_id = str(uuid.uuid4())
-        user_save_dir = get_user_save_dir(user_id)
+        user_save_dir = get_user_save_dir(user_id, category)
+        
+        print(f"保存目录: {user_save_dir}")
         
         # 处理base64图片数据
         if image_data.startswith('data:image'):
@@ -465,11 +566,15 @@ def save_image_from_data(image_data, original_url, page_info, user_id):
                 ext = 'jpg'
             elif 'gif' in header:
                 ext = 'gif'
+            elif 'webp' in header:
+                ext = 'webp'
             else:
                 ext = 'png'
+            print(f"Base64图片格式: {ext}, 数据大小: {len(image_bytes)} bytes")
         else:
             # 如果是URL，尝试下载
             try:
+                print(f"从URL下载图片: {image_data}")
                 response = requests.get(image_data, timeout=10)
                 image_bytes = response.content
                 # 从URL或Content-Type推断格式
@@ -480,48 +585,66 @@ def save_image_from_data(image_data, original_url, page_info, user_id):
                     ext = 'jpg'
                 elif 'gif' in content_type:
                     ext = 'gif'
+                elif 'webp' in content_type:
+                    ext = 'webp'
                 else:
                     ext = 'png'
+                print(f"下载完成: {ext}, 数据大小: {len(image_bytes)} bytes")
             except Exception as e:
                 print(f"下载图片失败: {e}")
                 return None
         
         # 生成文件名
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{image_id[:8]}.{ext}"
+        filename = f"{category}_{timestamp}_{image_id[:8]}.{ext}"
         filepath = user_save_dir / filename
+        
+        print(f"生成文件名: {filename}")
         
         # 保存文件
         with open(filepath, 'wb') as f:
             f.write(image_bytes)
+        
+        print(f"文件保存成功: {filepath}")
         
         # 获取图片尺寸
         try:
             from PIL import Image
             with Image.open(filepath) as img:
                 width, height = img.size
-        except Exception:
+            print(f"图片尺寸: {width}x{height}")
+        except Exception as e:
+            print(f"获取图片尺寸失败: {e}")
             width, height = 0, 0
         
-        # 保存到数据库
+        # 保存到数据库，添加分类信息
         file_size = len(image_bytes)
         context_info = page_info.get('imageContext', {}) if page_info else {}
+        context_info['category'] = category  # 添加分类信息
+        
+        print(f"保存数据库记录: ID={image_id}, 文件名={filename}")
         
         db.save_image_record(
             image_id, user_id, filename, original_url, page_info or {}, 
             file_size, width, height, context_info
         )
         
-        return {
+        result = {
             'image_id': image_id,
             'filename': filename,
             'filepath': str(filepath),
             'file_size': file_size,
-            'dimensions': (width, height)
+            'dimensions': (width, height),
+            'category': category
         }
+        
+        print(f"保存完成: {result}")
+        return result
         
     except Exception as e:
         print(f"保存图片失败: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # API路由
@@ -535,22 +658,31 @@ def get_status():
     })
 
 @app.route('/api/receive-image', methods=['POST'])
-@login_required
 def receive_image():
-    """接收浏览器插件发送的图片"""
+    """接收浏览器插件发送的图片（支持未登录用户）"""
     try:
         data = request.get_json()
-        user_id = session['user_id']
+        
+        # 检查用户是否登录，如果没有登录则使用默认用户
+        user_id = session.get('user_id')
+        if not user_id:
+            user_id = get_or_create_default_user()
+            print(f"未登录用户，使用默认用户ID: {user_id}")
         
         image_data = data.get('imageData')
         original_url = data.get('originalUrl')
         page_info = data.get('pageInfo', {})
+        category = data.get('category', 'clothes')  # 默认保存到clothes文件夹
         
         if not image_data:
             return jsonify({'success': False, 'error': '缺少图片数据'}), 400
         
-        # 保存图片
-        result = save_image_from_data(image_data, original_url, page_info, user_id)
+        # 验证分类参数
+        if category not in ['clothes', 'char']:
+            category = 'clothes'
+        
+        # 保存图片到指定分类文件夹
+        result = save_image_from_data(image_data, original_url, page_info, user_id, category)
         
         if result:
             # 创建任务
@@ -564,13 +696,20 @@ def receive_image():
             thread = threading.Thread(target=process_task)
             thread.start()
             
-            return jsonify({
+            response_data = {
                 'success': True,
                 'taskId': task_id,
                 'imageId': result['image_id'],
                 'filename': result['filename'],
-                'fileSize': result['file_size']
-            })
+                'fileSize': result['file_size'],
+                'category': result['category'],
+                'isLoggedIn': 'user_id' in session
+            }
+            
+            if 'user_id' not in session:
+                response_data['message'] = f'图片已保存到默认目录的{category}文件夹，建议登录以便管理您的图片'
+            
+            return jsonify(response_data)
         else:
             return jsonify({'success': False, 'error': '保存图片失败'}), 500
             
@@ -635,10 +774,29 @@ def get_user_images():
         'pages': (total + per_page - 1) // per_page
     })
 
-@app.route('/api/images/<filename>')
-def serve_image(filename):
-    """提供图片文件"""
-    filepath = SAVE_DIR / filename
+@app.route('/api/user/<user_id>/images/<filename>')
+def serve_user_image(user_id, filename):
+    """提供用户图片文件（移除登录要求以支持默认用户）"""
+    # 如果是登录用户，验证权限
+    if 'user_id' in session and session['user_id'] != user_id:
+        return jsonify({'error': '权限不足'}), 403
+    
+    # 从文件名推断分类
+    category = 'clothes'  # 默认分类
+    if filename.startswith('char_'):
+        category = 'char'
+    elif filename.startswith('clothes_'):
+        category = 'clothes'
+    
+    user_save_dir = get_user_save_dir(user_id, category)
+    filepath = user_save_dir / filename
+    
+    # 如果在默认分类中找不到，尝试在另一个分类中查找
+    if not filepath.exists():
+        other_category = 'char' if category == 'clothes' else 'clothes'
+        user_save_dir = get_user_save_dir(user_id, other_category)
+        filepath = user_save_dir / filename
+    
     if filepath.exists():
         return send_file(filepath)
     else:
@@ -650,26 +808,28 @@ def serve_thumbnail(filename):
     # 简单实现：直接返回原图，实际可以生成缩略图
     return serve_image(filename)
 
-@app.route('/api/user/<user_id>/images/<filename>')
-@login_required
-def serve_user_image(user_id, filename):
-    """提供用户图片文件"""
-    # 验证用户只能访问自己的图片
-    if session['user_id'] != user_id:
+@app.route('/api/user/<user_id>/thumbnails/<filename>')
+def serve_user_thumbnail(user_id, filename):
+    """提供用户缩略图（移除登录要求以支持默认用户）"""
+    return serve_user_image(user_id, filename)
+
+@app.route('/api/user/<user_id>/images/<category>/<filename>')
+def serve_user_image_by_category(user_id, category, filename):
+    """按分类提供用户图片文件"""
+    # 如果是登录用户，验证权限
+    if 'user_id' in session and session['user_id'] != user_id:
         return jsonify({'error': '权限不足'}), 403
     
-    user_save_dir = get_user_save_dir(user_id)
+    # 验证分类参数
+    if category not in ['clothes', 'char']:
+        return jsonify({'error': '无效的分类'}), 400
+    
+    user_save_dir = get_user_save_dir(user_id, category)
     filepath = user_save_dir / filename
     if filepath.exists():
         return send_file(filepath)
     else:
         return "图片不存在", 404
-
-@app.route('/api/user/<user_id>/thumbnails/<filename>')
-@login_required
-def serve_user_thumbnail(user_id, filename):
-    """提供用户缩略图"""
-    return serve_user_image(user_id, filename)
 
 # Web界面路由
 @app.route('/')
@@ -813,6 +973,218 @@ def sync_to_cloud():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/upload-clipboard', methods=['POST'])
+def upload_clipboard():
+    """从剪切板上传图片"""
+    try:
+        print("收到剪切板上传请求")
+        data = request.get_json()
+        
+        if not data:
+            print("错误: 没有接收到JSON数据")
+            return jsonify({'success': False, 'error': '没有接收到数据'}), 400
+        
+        # 检查用户是否登录，如果没有登录则使用默认用户
+        user_id = session.get('user_id')
+        if not user_id:
+            user_id = get_or_create_default_user()
+            print(f"未登录用户，使用默认用户ID: {user_id}")
+        else:
+            print(f"登录用户ID: {user_id}")
+        
+        image_data = data.get('imageData')
+        category = data.get('category', 'clothes')
+        
+        print(f"接收到参数: category={category}, imageData长度={len(image_data) if image_data else 0}")
+        
+        if not image_data:
+            print("错误: 剪切板中没有图片数据")
+            return jsonify({'success': False, 'error': '剪切板中没有图片数据'}), 400
+        
+        # 验证分类参数
+        if category not in ['clothes', 'char']:
+            category = 'clothes'
+            print(f"无效分类，使用默认分类: {category}")
+        
+        # 构造页面信息
+        page_info = {
+            'url': 'clipboard',
+            'title': f'剪切板图片 - {category}',
+            'source': 'clipboard'
+        }
+        
+        print(f"开始保存图片到分类: {category}")
+        
+        # 保存图片
+        result = save_image_from_data(image_data, 'clipboard', page_info, user_id, category)
+        
+        if result:
+            print(f"图片保存成功: {result['filename']}")
+            
+            # 创建任务
+            task_id = str(uuid.uuid4())
+            db.create_task(task_id, user_id, result['image_id'])
+            print(f"任务创建成功: {task_id}")
+            
+            # 模拟异步处理
+            def process_task():
+                try:
+                    time.sleep(1)  # 模拟处理时间
+                    db.update_task_status(task_id, 'completed')
+                    print(f"任务完成: {task_id}")
+                except Exception as e:
+                    print(f"任务处理失败: {e}")
+            
+            thread = threading.Thread(target=process_task)
+            thread.start()
+            
+            response_data = {
+                'success': True,
+                'taskId': task_id,
+                'imageId': result['image_id'],
+                'filename': result['filename'],
+                'fileSize': result['file_size'],
+                'category': result['category'],
+                'isLoggedIn': 'user_id' in session,
+                'message': f'剪切板图片已保存到 {category} 文件夹'
+            }
+            
+            print(f"返回成功响应: {response_data}")
+            return jsonify(response_data)
+        else:
+            print("错误: 保存剪切板图片失败")
+            return jsonify({'success': False, 'error': '保存剪切板图片失败'}), 500
+            
+    except Exception as e:
+        print(f"处理剪切板图片失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
+
+@app.route('/api/upload-file', methods=['POST'])
+def upload_file():
+    """文件上传接口"""
+    try:
+        print("收到文件上传请求")
+        
+        # 检查用户是否登录，如果没有登录则使用默认用户
+        user_id = session.get('user_id')
+        if not user_id:
+            user_id = get_or_create_default_user()
+            print(f"未登录用户，使用默认用户ID: {user_id}")
+        else:
+            print(f"登录用户ID: {user_id}")
+        
+        # 检查是否有文件上传
+        if 'file' not in request.files:
+            print("错误: 没有选择文件")
+            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        
+        file = request.files['file']
+        category = request.form.get('category', 'clothes')
+        
+        print(f"接收到文件: {file.filename}, 分类: {category}")
+        
+        if file.filename == '':
+            print("错误: 文件名为空")
+            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        
+        # 验证文件类型
+        allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+        if not file.filename.lower().endswith(allowed_extensions):
+            print(f"错误: 不支持的文件格式: {file.filename}")
+            return jsonify({'success': False, 'error': '不支持的文件格式，请上传 PNG、JPG、JPEG、GIF 或 WebP 格式的图片'}), 400
+        
+        # 验证分类参数
+        if category not in ['clothes', 'char']:
+            category = 'clothes'
+            print(f"无效分类，使用默认分类: {category}")
+        
+        # 检查文件大小 (10MB限制)
+        file.seek(0, 2)  # 移动到文件末尾
+        file_size = file.tell()
+        file.seek(0)  # 重置文件指针
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            print(f"错误: 文件过大 ({file_size} bytes)")
+            return jsonify({'success': False, 'error': '文件大小不能超过10MB'}), 400
+        
+        # 读取文件内容并转换为base64
+        file_content = file.read()
+        file_ext = file.filename.lower().split('.')[-1]
+        
+        # 确定MIME类型
+        mime_types = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'webp': 'image/webp'
+        }
+        mime_type = mime_types.get(file_ext, 'image/jpeg')
+        
+        # 转换为base64格式
+        image_data = f"data:{mime_type};base64," + base64.b64encode(file_content).decode('utf-8')
+        
+        print(f"文件转换完成, MIME类型: {mime_type}, 数据长度: {len(image_data)}")
+        
+        # 构造页面信息
+        page_info = {
+            'url': 'file_upload',
+            'title': f'上传文件 - {file.filename}',
+            'source': 'file_upload',
+            'original_filename': file.filename
+        }
+        
+        print(f"开始保存文件到分类: {category}")
+        
+        # 保存图片
+        result = save_image_from_data(image_data, f'file_upload:{file.filename}', page_info, user_id, category)
+        
+        if result:
+            print(f"文件保存成功: {result['filename']}")
+            
+            # 创建任务
+            task_id = str(uuid.uuid4())
+            db.create_task(task_id, user_id, result['image_id'])
+            print(f"任务创建成功: {task_id}")
+            
+            # 模拟异步处理
+            def process_task():
+                try:
+                    time.sleep(1)  # 模拟处理时间
+                    db.update_task_status(task_id, 'completed')
+                    print(f"任务完成: {task_id}")
+                except Exception as e:
+                    print(f"任务处理失败: {e}")
+            
+            thread = threading.Thread(target=process_task)
+            thread.start()
+            
+            response_data = {
+                'success': True,
+                'taskId': task_id,
+                'imageId': result['image_id'],
+                'filename': result['filename'],
+                'fileSize': result['file_size'],
+                'category': result['category'],
+                'originalFilename': file.filename,
+                'isLoggedIn': 'user_id' in session,
+                'message': f'文件已上传到 {category} 文件夹'
+            }
+            
+            print(f"返回成功响应: {response_data}")
+            return jsonify(response_data)
+        else:
+            print("错误: 保存上传文件失败")
+            return jsonify({'success': False, 'error': '保存上传文件失败'}), 500
+            
+    except Exception as e:
+        print(f"处理文件上传失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
 
 if __name__ == '__main__':
     print("启动图片处理服务器...")
