@@ -95,7 +95,8 @@ class CloudDatabase:
     
     def create_user(self, username, email, password, local_user_id=None):
         """创建云端用户"""
-        user_id = str(uuid.uuid4())
+        # 如果提供了local_user_id，则直接使用它作为云端用户ID，否则生成新的UUID
+        user_id = local_user_id if local_user_id else str(uuid.uuid4())
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         
         conn = sqlite3.connect(self.db_path)

@@ -38,18 +38,6 @@ class ImageDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # 检查并修复tasks表结构
-        self.check_and_fix_tasks_table(cursor)
-        
-        # 检查是否需要迁移数据库
-        cursor.execute("PRAGMA table_info(images)")
-        columns = [column[1] for column in cursor.fetchall()]
-        needs_migration = 'user_id' not in columns
-        
-        if needs_migration:
-            print("检测到旧版数据库，开始迁移...")
-            self.migrate_database(cursor)
-        
         # 创建用户表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -65,9 +53,9 @@ class ImageDatabase:
             )
         ''')
         
-        # 创建新的图片表结构
+        # 创建图片表
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS images_new (
+            CREATE TABLE IF NOT EXISTS images (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
                 filename TEXT NOT NULL,
@@ -85,53 +73,7 @@ class ImageDatabase:
             )
         ''')
         
-        # 如果需要迁移，复制数据并重命名表
-        if needs_migration and cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='images'").fetchone()[0] > 0:
-            # 创建默认用户用于旧数据
-            default_user_id = self.create_default_user(cursor)
-            
-            # 迁移旧数据
-            cursor.execute("SELECT * FROM images")
-            old_images = cursor.fetchall()
-            
-            for row in old_images:
-                if len(row) >= 11:  # 确保有足够的列
-                    cursor.execute('''
-                        INSERT OR IGNORE INTO images_new 
-                        (id, user_id, filename, original_url, page_url, page_title, 
-                         saved_at, file_size, image_width, image_height, context_info, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (row[0], default_user_id, row[1], row[2], row[3], row[4], 
-                          row[5], row[6], row[7], row[8], row[9], row[10]))
-            
-            # 删除旧表，重命名新表
-            cursor.execute("DROP TABLE IF EXISTS images")
-            cursor.execute("ALTER TABLE images_new RENAME TO images")
-            print("数据库迁移完成")
-        else:
-            # 如果表不存在或已经是新结构，删除临时表
-            cursor.execute("DROP TABLE IF EXISTS images_new")
-            # 确保images表存在
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS images (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    filename TEXT NOT NULL,
-                    original_url TEXT,
-                    page_url TEXT,
-                    page_title TEXT,
-                    saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    file_size INTEGER,
-                    image_width INTEGER,
-                    image_height INTEGER,
-                    context_info TEXT,
-                    status TEXT DEFAULT 'saved',
-                    cloud_synced BOOLEAN DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-        
-        # 确保tasks表结构正确
+        # 创建任务表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tasks (
                 task_id TEXT PRIMARY KEY,
@@ -148,78 +90,6 @@ class ImageDatabase:
         conn.commit()
         conn.close()
     
-    def check_and_fix_tasks_table(self, cursor):
-        """检查并修复tasks表结构"""
-        try:
-            # 检查tasks表是否存在
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
-            table_exists = cursor.fetchone()
-            
-            if table_exists:
-                # 检查tasks表的列结构
-                cursor.execute("PRAGMA table_info(tasks)")
-                columns = [column[1] for column in cursor.fetchall()]
-                print(f"现有tasks表列: {columns}")
-                
-                # 如果缺少user_id列，需要重建表
-                if 'user_id' not in columns:
-                    print("tasks表缺少user_id列，开始重建...")
-                    
-                    # 备份现有数据
-                    cursor.execute("SELECT * FROM tasks")
-                    old_tasks = cursor.fetchall()
-                    
-                    # 删除旧表
-                    cursor.execute("DROP TABLE tasks")
-                    
-                    # 创建新表
-                    cursor.execute('''
-                        CREATE TABLE tasks (
-                            task_id TEXT PRIMARY KEY,
-                            user_id TEXT NOT NULL DEFAULT 'default-user',
-                            status TEXT DEFAULT 'processing',
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            image_id TEXT,
-                            FOREIGN KEY (image_id) REFERENCES images (id),
-                            FOREIGN KEY (user_id) REFERENCES users (user_id)
-                        )
-                    ''')
-                    
-                    # 恢复数据，为旧任务分配默认用户ID
-                    if old_tasks:
-                        # 获取或创建默认用户
-                        cursor.execute("SELECT user_id FROM users LIMIT 1")
-                        default_user = cursor.fetchone()
-                        default_user_id = default_user[0] if default_user else self.get_or_create_default_user(cursor)
-                        
-                        for task in old_tasks:
-                            if len(task) >= 5:  # 确保有足够的列
-                                cursor.execute('''
-                                    INSERT INTO tasks (task_id, user_id, status, created_at, updated_at, image_id)
-                                    VALUES (?, ?, ?, ?, ?, ?)
-                                ''', (task[0], default_user_id, task[1], task[2], task[3], task[4] if len(task) > 4 else None))
-                    
-                    print("tasks表重建完成")
-                else:
-                    print("tasks表结构正确")
-            else:
-                print("tasks表不存在，将在后续创建")
-                
-        except Exception as e:
-            print(f"检查tasks表结构失败: {e}")
-    
-    def get_or_create_default_user(self, cursor):
-        """获取或创建默认用户"""
-        # 先尝试获取现有的默认用户
-        cursor.execute("SELECT user_id FROM users WHERE username LIKE 'admin%' OR user_id LIKE 'default-user%' LIMIT 1")
-        result = cursor.fetchone()
-        if result:
-            return result[0]
-        
-        # 如果没有，创建新的默认用户
-        return self.create_default_user(cursor)
-
     def create_user(self, username, email, password):
         """创建新用户"""
         user_id = str(uuid.uuid4())
@@ -435,7 +305,7 @@ class CloudServerClient:
         self.enabled = enabled
         self.session = requests.Session() if enabled else None
     
-    def register_user(self, username, email, password):
+    def register_user(self, username, email, password, local_user_id=None):
         """在云端注册用户"""
         if not self.enabled:
             return {'success': True, 'message': '云端同步已禁用'}
@@ -444,7 +314,8 @@ class CloudServerClient:
             response = self.session.post(f"{self.server_url}/register", json={
                 'username': username,
                 'email': email,
-                'password': password
+                'password': password,
+                'local_user_id': local_user_id  # 添加本地用户ID
             }, timeout=10)
             return response.json() if response.status_code == 200 else None
         except Exception as e:
@@ -995,10 +866,10 @@ def register():
         if not user_id:
             return jsonify({'success': False, 'error': '用户名或邮箱已存在'}), 400
         
-        # 尝试云端注册（仅在启用时）
+        # 尝试云端注册（仅在启用时），传递本地用户ID
         if ENABLE_CLOUD_SYNC:
             def cloud_register():
-                cloud_result = cloud_client.register_user(username, email, password)
+                cloud_result = cloud_client.register_user(username, email, password, user_id)
                 if cloud_result:
                     print(f"用户 {username} 已同步到云端")
             
@@ -1040,9 +911,7 @@ def login():
         # 尝试云端登录（仅在启用时）
         if ENABLE_CLOUD_SYNC:
             def cloud_login():
-                cloud_result = cloud_client.login_user(username, password)
-                if cloud_result:
-                    print(f"用户 {username} 云端登录成功")
+                cloud_client.login_user(username, password)
             
             threading.Thread(target=cloud_login).start()
         
@@ -1239,6 +1108,139 @@ def upload_clipboard():
         return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
 
 @app.route('/api/upload-file', methods=['POST'])
+def upload_file():
+    """文件上传接口"""
+    try:
+        print("收到文件上传请求")
+        
+        # 检查用户是否登录，如果没有登录则使用默认用户
+        user_id = session.get('user_id')
+        if not user_id:
+            user_id = get_or_create_default_user()
+            print(f"未登录用户，使用默认用户ID: {user_id}")
+        else:
+            print(f"登录用户ID: {user_id}")
+        
+        # 检查是否有文件上传
+        if 'file' not in request.files:
+            print("错误: 没有选择文件")
+            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        
+        file = request.files['file']
+        category = request.form.get('category', 'clothes')
+        
+        print(f"接收到文件: {file.filename}, 分类: {category}")
+        
+        if file.filename == '':
+            print("错误: 文件名为空")
+            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        
+        # 验证文件类型
+        allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+        if not file.filename.lower().endswith(allowed_extensions):
+            print(f"错误: 不支持的文件格式: {file.filename}")
+            return jsonify({'success': False, 'error': '不支持的文件格式，请上传 PNG、JPG、JPEG、GIF 或 WebP 格式的图片'}), 400
+        
+        # 验证分类参数
+        if category not in ['clothes', 'char']:
+            category = 'clothes'
+            print(f"无效分类，使用默认分类: {category}")
+        
+        # 检查文件大小 (10MB限制)
+        file.seek(0, 2)  # 移动到文件末尾
+        file_size = file.tell()
+        file.seek(0)  # 重置文件指针
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            print(f"错误: 文件过大 ({file_size} bytes)")
+            return jsonify({'success': False, 'error': '文件大小不能超过10MB'}), 400
+        
+        # 读取文件内容并转换为base64
+        file_content = file.read()
+        file_ext = file.filename.lower().split('.')[-1]
+        
+        # 确定MIME类型
+        mime_types = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'webp': 'image/webp'
+        }
+        mime_type = mime_types.get(file_ext, 'image/jpeg')
+        
+        # 转换为base64格式
+        image_data = f"data:{mime_type};base64," + base64.b64encode(file_content).decode('utf-8')
+        
+        print(f"文件转换完成, MIME类型: {mime_type}, 数据长度: {len(image_data)}")
+        
+        # 构造页面信息
+        page_info = {
+            'url': 'file_upload',
+            'title': f'上传文件 - {file.filename}',
+            'source': 'file_upload',
+            'original_filename': file.filename
+        }
+        
+        print(f"开始保存文件到分类: {category}")
+        
+        # 保存图片
+        result = save_image_from_data(image_data, f'file_upload:{file.filename}', page_info, user_id, category)
+        
+        if result:
+            print(f"文件保存成功: {result['filename']}")
+            
+            # 创建任务
+            task_id = str(uuid.uuid4())
+            db.create_task(task_id, user_id, result['image_id'])
+            print(f"任务创建成功: {task_id}")
+            
+            # 模拟异步处理
+            def process_task():
+                try:
+                    time.sleep(1)  # 模拟处理时间
+                    db.update_task_status(task_id, 'completed')
+                    print(f"任务完成: {task_id}")
+                except Exception as e:
+                    print(f"任务处理失败: {e}")
+            
+            thread = threading.Thread(target=process_task)
+            thread.start()
+            
+            response_data = {
+                'success': True,
+                'taskId': task_id,
+                'imageId': result['image_id'],
+                'filename': result['filename'],
+                'fileSize': result['file_size'],
+                'category': result['category'],
+                'originalFilename': file.filename,
+                'isLoggedIn': 'user_id' in session,
+                'message': f'文件已上传到 {category} 文件夹'
+            }
+            
+            print(f"返回成功响应: {response_data}")
+            return jsonify(response_data)
+        else:
+            print("错误: 保存上传文件失败")
+            return jsonify({'success': False, 'error': '保存上传文件失败'}), 500
+            
+    except Exception as e:
+        print(f"处理文件上传失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
+
+if __name__ == '__main__':
+    print("启动图片处理服务器...")
+    print(f"保存目录: {BASE_SAVE_DIR.absolute()}")
+    print(f"数据库: {DB_PATH}")
+    print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
+    print("WebUI地址: http://localhost:8080")
+    app.run(host='localhost', port=8080, debug=True)
+    print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
+    print("WebUI地址: http://localhost:8080")
+    app.run(host='localhost', port=8080, debug=True)
 def upload_file():
     """文件上传接口"""
     try:
