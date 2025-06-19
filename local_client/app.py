@@ -23,8 +23,8 @@ app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)  # 会话�
 BASE_SAVE_DIR = Path("saved_images")
 DB_PATH = "image_database.db"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-CLOUD_SERVER_URL = "https://your-cloud-server.com/api"  # 云端服务器地址
-ENABLE_CLOUD_SYNC = False  # 禁用云端同步
+CLOUD_SERVER_URL = "http://localhost:8081/api"  # 修改为本地测试服务器
+ENABLE_CLOUD_SYNC = True  # 启用云端同步进行测试
 
 # 确保保存目录存在
 BASE_SAVE_DIR.mkdir(exist_ok=True)
@@ -467,17 +467,152 @@ class CloudServerClient:
             return None
     
     def sync_user_data(self, user_id, user_data):
-        """同步用户数据到云端"""
+        """同步用户数据到云端，包括所有图片文件"""
         if not self.enabled:
             return {'success': True, 'message': '云端同步已禁用'}
         
         try:
-            response = self.session.post(f"{self.server_url}/sync/user/{user_id}", 
-                                       json=user_data, timeout=30)
-            return response.json() if response.status_code == 200 else None
+            print(f"开始同步用户 {user_id} 的数据和图片...")
+            
+            # 获取用户目录路径
+            user_dir = BASE_SAVE_DIR / user_id
+            if not user_dir.exists():
+                print(f"用户目录不存在: {user_dir}")
+                return {'success': False, 'error': '用户目录不存在'}
+            
+            # 从user_data中获取图片列表
+            images_metadata = user_data.get('images', [])
+            print(f"从数据库获取到 {len(images_metadata)} 个图片记录")
+            
+            # 收集所有图片文件的base64数据
+            image_files = {}
+            total_files = 0
+            total_size = 0
+            processed_files = 0
+            failed_files = 0
+            
+            for image_meta in images_metadata:
+                filename = image_meta.get('filename')
+                if not filename:
+                    print(f"跳过无文件名的图片记录: {image_meta.get('id', 'unknown')}")
+                    continue
+                
+                # 从文件名推断分类
+                category = 'clothes'  # 默认分类
+                if filename.startswith('char_'):
+                    category = 'char'
+                elif filename.startswith('clothes_'):
+                    category = 'clothes'
+                
+                # 构造文件路径
+                category_dir = user_dir / category
+                filepath = category_dir / filename
+                
+                # 如果在推断的分类目录中找不到，尝试另一个分类目录
+                if not filepath.exists():
+                    other_category = 'char' if category == 'clothes' else 'clothes'
+                    other_category_dir = user_dir / other_category
+                    alt_filepath = other_category_dir / filename
+                    if alt_filepath.exists():
+                        filepath = alt_filepath
+                        category = other_category
+                        print(f"在 {other_category} 目录中找到文件: {filename}")
+                
+                # 检查文件是否存在
+                if not filepath.exists():
+                    print(f"警告: 图片文件不存在: {filepath}")
+                    failed_files += 1
+                    continue
+                
+                try:
+                    # 读取图片文件并转换为base64
+                    with open(filepath, 'rb') as f:
+                        file_content = f.read()
+                    
+                    # 转换为base64
+                    file_base64 = base64.b64encode(file_content).decode('utf-8')
+                    
+                    # 确定MIME类型
+                    file_ext = filepath.suffix.lower()
+                    mime_types = {
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.gif': 'image/gif',
+                        '.webp': 'image/webp'
+                    }
+                    mime_type = mime_types.get(file_ext, 'image/jpeg')
+                    
+                    # 构造完整的data URL
+                    image_data_url = f"data:{mime_type};base64,{file_base64}"
+                    
+                    # 只存储base64数据，使用filename作为key
+                    image_files[filename] = image_data_url
+                    
+                    total_files += 1
+                    total_size += len(file_content)
+                    processed_files += 1
+                    
+                    print(f"已处理图片: {filename} ({len(file_content)} bytes)")
+                    
+                except Exception as e:
+                    print(f"处理图片文件失败 {filepath}: {e}")
+                    failed_files += 1
+                    continue
+            
+            print(f"图片处理完成: 成功 {processed_files} 个，失败 {failed_files} 个，总大小: {total_size / 1024 / 1024:.2f} MB")
+            
+            # 构造完整的同步数据
+            sync_payload = {
+                'user_info': user_data.get('user_info', {}),
+                'images_metadata': images_metadata,
+                'image_files': image_files,
+                'sync_timestamp': datetime.datetime.now().isoformat(),
+                'sync_statistics': {
+                    'total_metadata_records': len(images_metadata),
+                    'total_files_found': processed_files,
+                    'total_files_missing': failed_files,
+                    'total_size': total_size,
+                    'categories': list(set([
+                        'char' if img.get('filename', '').startswith('char_') else 'clothes' 
+                        for img in images_metadata if img.get('filename')
+                    ])) if images_metadata else []
+                }
+            }
+            
+            print(f"开始上传到云端服务器: {self.server_url}/sync/user/{user_id}")
+            
+            # 由于数据可能很大，增加超时时间
+            response = self.session.post(
+                f"{self.server_url}/sync/user/{user_id}", 
+                json=sync_payload, 
+                timeout=300,  # 5分钟超时
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"同步成功: {result}")
+                return result
+            else:
+                print(f"同步失败，状态码: {response.status_code}, 响应: {response.text}")
+                return {
+                    'success': False, 
+                    'error': f'云端响应错误: {response.status_code}',
+                    'response_text': response.text[:500]  # 只返回前500字符避免日志过长
+                }
+                
+        except requests.exceptions.Timeout:
+            print("同步超时")
+            return {'success': False, 'error': '同步请求超时'}
+        except requests.exceptions.RequestException as e:
+            print(f"网络请求失败: {e}")
+            return {'success': False, 'error': f'网络请求失败: {str(e)}'}
         except Exception as e:
             print(f"数据同步失败: {e}")
-            return None
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': f'同步过程中发生错误: {str(e)}'}
 
 cloud_client = CloudServerClient(CLOUD_SERVER_URL, ENABLE_CLOUD_SYNC)
 
@@ -953,8 +1088,11 @@ def sync_to_cloud():
     
     try:
         user_id = session['user_id']
+        print(f"开始同步用户 {user_id} 的数据...")
+        
+        # 获取用户信息和图片元数据
         user_info = db.get_user_info(user_id)
-        user_images = db.get_user_images(user_id, limit=1000)  # 获取所有图片
+        user_images = db.get_user_images(user_id, limit=10000)  # 获取所有图片元数据
         
         sync_data = {
             'user_info': user_info,
@@ -962,16 +1100,54 @@ def sync_to_cloud():
             'sync_timestamp': datetime.datetime.now().isoformat()
         }
         
+        print(f"准备同步: 用户信息={bool(user_info)}, 图片数量={len(user_images)}")
+        
         def sync_task():
-            result = cloud_client.sync_user_data(user_id, sync_data)
-            if result:
-                print(f"用户 {user_id} 数据同步成功")
+            try:
+                print("开始异步同步任务...")
+                result = cloud_client.sync_user_data(user_id, sync_data)
+                if result and result.get('success'):
+                    print(f"用户 {user_id} 数据同步成功: {result}")
+                    
+                    # 可选：更新本地数据库标记为已同步
+                    # 这里可以添加更新图片cloud_synced状态的逻辑
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute('''
+                            UPDATE images SET cloud_synced = 1 
+                            WHERE user_id = ? AND cloud_synced = 0
+                        ''', (user_id,))
+                        conn.commit()
+                        print(f"已标记用户 {user_id} 的图片为云端已同步")
+                    except Exception as e:
+                        print(f"更新同步状态失败: {e}")
+                    finally:
+                        conn.close()
+                        
+                else:
+                    print(f"用户 {user_id} 数据同步失败: {result}")
+                    
+            except Exception as e:
+                print(f"同步任务执行失败: {e}")
+                import traceback
+                traceback.print_exc()
         
-        threading.Thread(target=sync_task).start()
+        # 启动异步同步任务
+        threading.Thread(target=sync_task, daemon=True).start()
         
-        return jsonify({'success': True, 'message': '同步任务已启动'})
+        return jsonify({
+            'success': True, 
+            'message': '同步任务已启动',
+            'sync_info': {
+                'user_id': user_id,
+                'image_count': len(user_images),
+                'estimated_time': f"{len(user_images) * 0.1:.1f}秒"  # 估算时间
+            }
+        })
         
     except Exception as e:
+        print(f"启动同步任务失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/upload-clipboard', methods=['POST'])

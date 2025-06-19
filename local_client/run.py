@@ -22,6 +22,6 @@ if __name__ == '__main__':
     print("=" * 50)
     
     try:
-        app.run(host='localhost', port=8080, debug=False)
+        app.run(host='localhost', port=8080, debug=True)
     except KeyboardInterrupt:
         print("\n服务器已停止")

@@ -1,7 +1,7 @@
 # 图片处理服务器 API 文档
 
 ## 概述
-本文档描述了图片处理服务器的所有API接口，包括用户认证、图片管理、系统状态等功能。
+本文档描述了图片处理服务器的所有API接口，包括用户认证、图片管理、系统状态、云端同步等功能。
 
 ## 基础信息
 - **服务器地址**: `http://localhost:8080`
@@ -93,6 +93,10 @@ Content-Type: application/json
 }
 ```
 
+**说明**：
+- 注册成功后，如果启用云端同步，系统会自动尝试在云端注册用户
+- 云端注册失败不影响本地注册结果
+
 ### 3. 用户登录
 用户登录系统。
 
@@ -136,6 +140,10 @@ Content-Type: application/json
   "error": "用户名或密码错误"
 }
 ```
+
+**说明**：
+- 登录成功后，如果启用云端同步，系统会自动尝试云端登录
+- 会话有效期：记住登录为7天，普通登录为浏览器会话期间
 
 ### 4. 检查登录状态
 检查当前用户的登录状态。
@@ -511,6 +519,7 @@ Host: localhost:8080
 {
   "status": {
     "task_id": "t-12345678-90ab-cdef-1234-567890abcdef",
+    "user_id": "default-user-12345678",
     "status": "completed",
     "created_at": "2025-06-13 18:45:30",
     "updated_at": "2025-06-13 18:45:31",
@@ -531,7 +540,7 @@ Host: localhost:8080
 ## 云端同步接口
 
 ### 15. 同步数据到云端
-将用户数据同步到云端服务器（当前已禁用）。
+将用户数据和图片文件同步到云端服务器。
 
 **接口地址**：`POST /api/cloud/sync`
 
@@ -539,13 +548,104 @@ Host: localhost:8080
 
 **请求参数**：无
 
-**响应示例**：
+**功能说明**：
+- 获取用户信息和所有图片元数据
+- 读取本地图片文件并转换为base64格式
+- 构造完整的同步数据包
+- 将数据和文件上传到云端服务器
+- 更新本地同步状态标记
+
+**同步数据结构**：
+```json
+{
+  "user_info": {
+    "user_id": "string",
+    "username": "string", 
+    "email": "string",
+    "created_at": "datetime",
+    "last_login": "datetime",
+    "cloud_sync_enabled": "boolean"
+  },
+  "images_metadata": [
+    {
+      "id": "string",
+      "user_id": "string",
+      "filename": "string",
+      "original_url": "string",
+      "page_url": "string",
+      "page_title": "string",
+      "saved_at": "datetime",
+      "file_size": "integer",
+      "image_width": "integer",
+      "image_height": "integer",
+      "context_info": "object",
+      "status": "string",
+      "cloud_synced": "boolean"
+    }
+  ],
+  "image_files": {
+    "filename1.png": "data:image/png;base64,iVBORw0KGgoAAAA...",
+    "filename2.jpg": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+  },
+  "sync_timestamp": "datetime",
+  "sync_statistics": {
+    "total_metadata_records": "integer",
+    "total_files_found": "integer", 
+    "total_files_missing": "integer",
+    "total_size": "integer",
+    "categories": ["clothes", "char"]
+  }
+}
+```
+
+**请求示例**：
+```http
+POST /api/cloud/sync HTTP/1.1
+Host: localhost:8080
+Cookie: session=...
+Content-Type: application/json
+```
+
+**响应示例（启用云端同步）**：
+```json
+{
+  "success": true,
+  "message": "同步任务已启动",
+  "sync_info": {
+    "user_id": "default-user-12345678",
+    "image_count": 25,
+    "estimated_time": "2.5秒"
+  }
+}
+```
+
+**响应示例（禁用云端同步）**：
 ```json
 {
   "success": false,
   "error": "云端同步功能已禁用"
 }
 ```
+
+**同步过程说明**：
+1. 获取用户信息和图片元数据列表
+2. 遍历每个图片记录，按分类查找对应文件
+3. 读取图片文件并转换为base64格式
+4. 构造同步数据包，包含元数据和文件数据
+5. 异步上传到云端服务器的 `/sync/user/{user_id}` 接口
+6. 更新本地数据库中的 `cloud_synced` 标记
+
+**错误处理**：
+- 文件不存在：记录警告，继续处理其他文件
+- 网络超时：5分钟超时限制
+- 云端错误：返回详细错误信息
+- 同步失败：不影响本地数据
+
+**性能优化**：
+- 异步处理，不阻塞接口响应
+- 批量上传，减少网络请求次数
+- 断点续传（计划功能）
+- 增量同步（计划功能）
 
 ---
 
@@ -581,6 +681,48 @@ Host: localhost:8080
 - `"任务不存在"`: 查询的任务ID不存在
 - `"图片不存在"`: 请求的图片文件不存在
 - `"云端同步功能已禁用"`: 云端同步功能未启用
+- `"用户目录不存在"`: 用户存储目录不存在
+- `"同步请求超时"`: 云端同步请求超时
+- `"网络请求失败"`: 网络连接问题
+- `"云端响应错误"`: 云端服务器返回错误
+
+---
+
+## 配置说明
+
+### 云端同步配置
+在 `app.py` 中修改以下配置：
+
+```python
+# 云端服务器配置
+CLOUD_SERVER_URL = "http://localhost:8081/api"  # 云端服务器地址
+ENABLE_CLOUD_SYNC = True  # 启用云端同步
+
+# 文件存储配置
+BASE_SAVE_DIR = Path("saved_images")  # 本地存储目录
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}  # 支持的文件格式
+```
+
+### 数据库配置
+- **数据库文件**: `image_database.db`
+- **自动迁移**: 支持从旧版本数据库自动迁移
+- **连接池**: 使用SQLite连接池
+- **事务处理**: 支持事务回滚
+
+### 文件存储结构
+```
+saved_images/
+├── {user_id}/
+│   ├── clothes/           # 服装类图片
+│   │   ├── clothes_20250613_184530_12345678.png
+│   │   └── clothes_20250613_184531_87654321.jpg
+│   └── char/             # 角色类图片
+│       ├── char_20250613_184532_abcdefgh.png
+│       └── char_20250613_184533_ijklmnop.webp
+└── default-user-{id}/    # 未登录用户的默认目录
+    ├── clothes/
+    └── char/
+```
 
 ---
 
@@ -626,26 +768,32 @@ curl -X POST http://localhost:8080/api/upload-file \
   -F "category=clothes"
 ```
 
-6. **获取用户资料**
+6. **云端同步**
+```bash
+curl -X POST http://localhost:8080/api/cloud/sync \
+  -b cookies.txt
+```
+
+7. **获取用户资料**
 ```bash
 curl -X GET http://localhost:8080/api/user/profile \
   -b cookies.txt
 ```
 
-7. **获取图片列表**
+8. **获取图片列表**
 ```bash
 curl -X GET "http://localhost:8080/api/user/images?per_page=5" \
   -b cookies.txt
 ```
 
-8. **下载图片**
+9. **下载图片**
 ```bash
 curl -X GET "http://localhost:8080/api/user/{user_id}/images/{filename}" \
   -b cookies.txt \
   -o downloaded_image.png
 ```
 
-9. **用户登出**
+10. **用户登出**
 ```bash
 curl -X POST http://localhost:8080/api/logout \
   -b cookies.txt
@@ -701,6 +849,25 @@ curl -X POST http://localhost:8080/api/logout \
 }
 ```
 
+### 云端同步数据结构 (SyncData)
+```json
+{
+  "user_info": "User",           // 用户信息对象
+  "images_metadata": ["Image"],  // 图片元数据数组
+  "image_files": {               // 图片文件数据字典
+    "filename": "base64_data"    // 文件名: base64数据
+  },
+  "sync_timestamp": "datetime",  // 同步时间戳
+  "sync_statistics": {           // 同步统计信息
+    "total_metadata_records": "integer",
+    "total_files_found": "integer",
+    "total_files_missing": "integer", 
+    "total_size": "integer",
+    "categories": ["string"]
+  }
+}
+```
+
 ---
 
 ## 分类管理说明
@@ -744,7 +911,7 @@ saved_images/
 2. **权限控制**: 用户只能访问自己的图片和数据
 3. **文件存储**: 每个用户的图片存储在独立的目录中，按分类组织
 4. **数据库迁移**: 系统会自动检测并迁移旧版本的数据库结构
-5. **云端同步**: 当前版本云端同步功能已禁用
+5. **云端同步**: 需要云端服务器配合，支持异步处理
 6. **图片格式**: 支持PNG、JPG、JPEG、GIF、WEBP格式
 7. **文件大小**: 单个文件最大10MB
 8. **分类验证**: 系统会验证分类参数，无效分类自动降级为 `clothes`
@@ -752,6 +919,8 @@ saved_images/
 10. **批量上传**: 建议单次上传文件数量不超过 20 个
 11. **目录自动创建**: 系统会自动创建所需的分类目录
 12. **默认用户**: 未登录用户的图片保存到默认用户目录，建议登录管理
+13. **同步超时**: 云端同步超时时间为5分钟
+14. **网络要求**: 云端同步需要稳定的网络连接
 
 ---
 
@@ -774,12 +943,21 @@ saved_images/
 - 增强错误处理和验证机制
 - 更新API文档，添加新功能详细说明
 
-### v1.2.0 (计划中)
+### v1.2.0 (2025-06-25)
+- 实现完整的云端同步功能
+- 支持图片文件和元数据同步
+- 添加同步状态跟踪和错误处理
+- 优化异步处理机制
+- 支持大文件上传和超时处理
+- 更新云端同步相关API文档
+
+### v1.3.0 (计划中)
 - 添加图片编辑功能
 - 支持批量操作
 - 添加图片标签系统
 - 优化缩略图生成
 - 增强搜索和过滤功能
+- 支持增量同步
 
 ---
 
@@ -802,3 +980,5 @@ saved_images/
 - 使用浏览器开发者工具检查请求和响应
 - 验证文件权限和目录结构
 - 检查数据库状态和记录
+- 监控云端同步日志
+- 测试网络连接和超时处理

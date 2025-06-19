@@ -323,6 +323,81 @@ API文档: 请查看 API_DOCUMENTATION.md
             print("✗ 登出请求失败")
             return False
     
+    def test_upload_clipboard(self, category="clothes"):
+        """测试剪切板图片上传"""
+        print(f"测试剪切板图片上传 (分类: {category})...")
+        url = f"{self.base_url}/api/upload-clipboard"
+        
+        # 创建一个简单的测试图片 base64 数据
+        test_image_data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        
+        upload_data = {
+            "imageData": test_image_data,
+            "category": category
+        }
+        
+        self.print_request("剪切板图片上传", "POST", url, data=upload_data)
+        response = self.session.post(url, json=upload_data)
+        self.print_response("剪切板图片上传", response)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                print(f"✓ 剪切板图片上传成功:")
+                print(f"  - 任务ID: {data.get('taskId')}")
+                print(f"  - 图片ID: {data.get('imageId')}")
+                print(f"  - 文件名: {data.get('filename')}")
+                print(f"  - 分类: {data.get('category')}")
+                print(f"  - 文件大小: {data.get('fileSize')} bytes")
+                print(f"  - 登录状态: {'已登录' if data.get('isLoggedIn') else '未登录'}")
+                return data
+            else:
+                print(f"✗ 剪切板图片上传失败: {data.get('error')}")
+                return None
+        else:
+            print(f"✗ 剪切板图片上传请求失败: {response.status_code}")
+            try:
+                error_data = response.json()
+                print(f"错误详情: {error_data}")
+            except:
+                print(f"响应内容: {response.text}")
+            return None
+
+    def test_upload_file_api(self, category="clothes"):
+        """测试文件上传API（模拟）"""
+        print(f"测试文件上传API (分类: {category})...")
+        url = f"{self.base_url}/api/upload-file"
+        
+        # 创建一个简单的测试文件数据
+        test_file_content = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        files = {'file': ('test_image.png', test_file_content, 'image/png')}
+        data = {'category': category}
+        
+        self.print_request("文件上传", "POST", url, data=data)
+        print(f"文件: test_image.png ({len(test_file_content)} bytes)")
+        
+        response = self.session.post(url, files=files, data=data)
+        self.print_response("文件上传", response)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                print(f"✓ 文件上传成功:")
+                print(f"  - 任务ID: {data.get('taskId')}")
+                print(f"  - 图片ID: {data.get('imageId')}")
+                print(f"  - 文件名: {data.get('filename')}")
+                print(f"  - 分类: {data.get('category')}")
+                print(f"  - 原始文件名: {data.get('originalFilename')}")
+                print(f"  - 文件大小: {data.get('fileSize')} bytes")
+                return data
+            else:
+                print(f"✗ 文件上传失败: {data.get('error')}")
+                return None
+        else:
+            print(f"✗ 文件上传请求失败: {response.status_code}")
+            return None
+
     def run_full_test(self):
         """运行完整测试流程"""
         print("开始API测试...")
@@ -397,6 +472,33 @@ API文档: 请查看 API_DOCUMENTATION.md
         
         print("\n注册测试完成!")
 
+    def run_upload_test(self):
+        """运行上传功能测试"""
+        print("开始上传功能测试...")
+        print(f"测试服务器: {self.base_url}")
+        
+        # 1. 检查系统状态
+        if not self.test_system_status():
+            return
+        
+        # 2. 测试剪切板上传 - clothes 分类
+        print("\n=== 测试剪切板上传 (clothes) ===")
+        self.test_upload_clipboard("clothes")
+        
+        # 3. 测试剪切板上传 - char 分类
+        print("\n=== 测试剪切板上传 (char) ===")
+        self.test_upload_clipboard("char")
+        
+        # 4. 测试文件上传 - clothes 分类
+        print("\n=== 测试文件上传 (clothes) ===")
+        self.test_upload_file_api("clothes")
+        
+        # 5. 测试文件上传 - char 分类
+        print("\n=== 测试文件上传 (char) ===")
+        self.test_upload_file_api("char")
+        
+        print("\n上传功能测试完成!")
+
 def main():
     """主函数"""
     # 检查是否请求帮助
@@ -407,7 +509,7 @@ def main():
     
     # 可以通过命令行参数指定服务器地址和测试类型
     base_url = "http://localhost:8080"
-    test_type = "full"  # full 或 register
+    test_type = "full"  # full, register, upload
     
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
@@ -419,6 +521,8 @@ def main():
     try:
         if test_type == "register":
             tester.run_register_test()
+        elif test_type == "upload":
+            tester.run_upload_test()
         else:
             tester.run_full_test()
     except KeyboardInterrupt:
