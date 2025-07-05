@@ -123,6 +123,23 @@ class ImageDatabase:
             )
         ''')
         
+        # 创建VTON历史表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS vton_history (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                human_image TEXT NOT NULL,
+                garment_image TEXT NOT NULL,
+                result_image TEXT NOT NULL,
+                result_image_id TEXT,
+                parameters TEXT,
+                processing_time REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id),
+                FOREIGN KEY (result_image_id) REFERENCES images (id)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -516,7 +533,7 @@ class CloudServerClient:
             return None
     
     def sync_user_data(self, user_id, user_data):
-        """同步用户数据到云端，包括所有图片文件"""
+        """同步用户数据到云端，包括所有图片文件、VTON历史和收藏数据"""
         if not self.enabled:
             return {'success': True, 'message': '云端同步已禁用'}
         
@@ -533,6 +550,14 @@ class CloudServerClient:
             images_metadata = user_data.get('images', [])
             print(f"从数据库获取到 {len(images_metadata)} 个图片记录")
             
+            # 获取VTON历史数据
+            vton_history = user_data.get('vton_history', [])
+            print(f"从数据库获取到 {len(vton_history)} 个VTON历史记录")
+            
+            # 获取收藏数据
+            favorites_data = user_data.get('favorites', [])
+            print(f"从数据库获取到 {len(favorites_data)} 个收藏记录")
+            
             # 收集所有图片文件的base64数据
             image_files = {}
             total_files = 0
@@ -546,26 +571,33 @@ class CloudServerClient:
                     print(f"跳过无文件名的图片记录: {image_meta.get('id', 'unknown')}")
                     continue
                 
-                # 从文件名推断分类
-                category = 'clothes'  # 默认分类
-                if filename.startswith('char_'):
-                    category = 'char'
-                elif filename.startswith('clothes_'):
-                    category = 'clothes'
+                # 从数据库中获取分类信息，如果没有则从文件名推断
+                category = image_meta.get('category', 'clothes')
+                if not category or category == 'favorites':  # favorites不是文件夹分类
+                    if filename.startswith('char_'):
+                        category = 'char'
+                    elif filename.startswith('clothes_'):
+                        category = 'clothes'
+                    elif filename.startswith('vton_result_'):
+                        category = 'vton_results'
+                    else:
+                        category = 'clothes'  # 默认分类
                 
                 # 构造文件路径
                 category_dir = user_dir / category
                 filepath = category_dir / filename
                 
-                # 如果在推断的分类目录中找不到，尝试另一个分类目录
+                # 如果在推断的分类目录中找不到，尝试其他分类目录
                 if not filepath.exists():
-                    other_category = 'char' if category == 'clothes' else 'clothes'
-                    other_category_dir = user_dir / other_category
-                    alt_filepath = other_category_dir / filename
-                    if alt_filepath.exists():
-                        filepath = alt_filepath
-                        category = other_category
-                        print(f"在 {other_category} 目录中找到文件: {filename}")
+                    for other_category in ['char', 'clothes', 'vton_results']:
+                        if other_category != category:
+                            other_category_dir = user_dir / other_category
+                            alt_filepath = other_category_dir / filename
+                            if alt_filepath.exists():
+                                filepath = alt_filepath
+                                category = other_category
+                                print(f"在 {other_category} 目录中找到文件: {filename}")
+                                break
                 
                 # 检查文件是否存在
                 if not filepath.exists():
@@ -611,21 +643,32 @@ class CloudServerClient:
             
             print(f"图片处理完成: 成功 {processed_files} 个，失败 {failed_files} 个，总大小: {total_size / 1024 / 1024:.2f} MB")
             
+            # 收集分类统计信息
+            categories_stats = {}
+            for img in images_metadata:
+                if img.get('filename'):
+                    cat = img.get('category', 'clothes')
+                    if cat == 'favorites':  # favorites不计入文件分类统计
+                        continue
+                    categories_stats[cat] = categories_stats.get(cat, 0) + 1
+            
             # 构造完整的同步数据
             sync_payload = {
                 'user_info': user_data.get('user_info', {}),
                 'images_metadata': images_metadata,
                 'image_files': image_files,
+                'vton_history': vton_history,
+                'favorites_data': favorites_data,
                 'sync_timestamp': datetime.datetime.now().isoformat(),
                 'sync_statistics': {
                     'total_metadata_records': len(images_metadata),
                     'total_files_found': processed_files,
                     'total_files_missing': failed_files,
                     'total_size': total_size,
-                    'categories': list(set([
-                        'char' if img.get('filename', '').startswith('char_') else 'clothes' 
-                        for img in images_metadata if img.get('filename')
-                    ])) if images_metadata else []
+                    'categories': list(categories_stats.keys()),
+                    'categories_stats': categories_stats,
+                    'vton_history_count': len(vton_history),
+                    'favorites_count': len(favorites_data)
                 }
             }
             
@@ -1454,13 +1497,61 @@ def sync_to_cloud():
         user_info = db.get_user_info(user_id)
         user_images = db.get_user_images(user_id, limit=10000)  # 获取所有图片元数据
         
+        # 获取VTON历史数据
+        vton_history = []
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='vton_history'
+            ''')
+            if cursor.fetchone():
+                cursor.execute('''
+                    SELECT id, user_id, human_image, garment_image, result_image, 
+                           result_image_id, parameters, processing_time, created_at
+                    FROM vton_history 
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                ''', (user_id,))
+                
+                for row in cursor.fetchall():
+                    try:
+                        parameters = json.loads(row[6]) if row[6] else {}
+                    except:
+                        parameters = {}
+                    
+                    vton_history.append({
+                        'id': row[0],
+                        'user_id': row[1],
+                        'human_image': row[2],
+                        'garment_image': row[3],
+                        'result_image': row[4],
+                        'result_image_id': row[5],
+                        'parameters': parameters,
+                        'processing_time': row[7],
+                        'created_at': row[8]
+                    })
+            conn.close()
+        except Exception as e:
+            print(f"获取VTON历史失败: {e}")
+        
+        # 获取收藏数据
+        favorites_data = []
+        try:
+            favorites_data = db.get_user_favorites(user_id, limit=10000)
+        except Exception as e:
+            print(f"获取收藏数据失败: {e}")
+        
         sync_data = {
             'user_info': user_info,
             'images': user_images,
+            'vton_history': vton_history,
+            'favorites': favorites_data,
             'sync_timestamp': datetime.datetime.now().isoformat()
         }
         
-        print(f"准备同步: 用户信息={bool(user_info)}, 图片数量={len(user_images)}")
+        print(f"准备同步: 用户信息={bool(user_info)}, 图片数量={len(user_images)}, VTON历史={len(vton_history)}, 收藏数量={len(favorites_data)}")
         
         def sync_task():
             try:
@@ -1502,7 +1593,9 @@ def sync_to_cloud():
             'sync_info': {
                 'user_id': user_id,
                 'image_count': len(user_images),
-                'estimated_time': f"{len(user_images) * 0.1:.1f}秒"  # 估算时间
+                'vton_history_count': len(vton_history),
+                'favorites_count': len(favorites_data),
+                'estimated_time': f"{(len(user_images) + len(vton_history)) * 0.1:.1f}秒"  # 估算时间
             }
         })
         

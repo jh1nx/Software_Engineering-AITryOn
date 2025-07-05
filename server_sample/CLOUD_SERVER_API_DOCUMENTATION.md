@@ -71,7 +71,7 @@ Content-Type: application/json
   "username": "string",        // 必填，用户名
   "email": "string",           // 必填，邮箱地址
   "password": "string",        // 必填，密码
-  "local_user_id": "string"    // 可选，本地用户ID
+  "local_user_id": "string"    // 可选，本地用户ID（推荐提供）
 }
 ```
 
@@ -89,7 +89,7 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "cloud_user_id": "c-12345678-90ab-cdef-1234-567890abcdef",
+  "cloud_user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "message": "云端注册成功"
 }
 ```
@@ -104,62 +104,38 @@ Content-Type: application/json
 
 **处理逻辑**：
 1. 验证请求参数 `username`、`email`、`password` 的完整性
-2. 调用 `cloud_db.create_user()` 检查用户名和邮箱是否已存在
-3. 生成唯一的云端用户ID和密码哈希（SHA256）
-4. 创建用户记录到 `cloud_users` 表
-5. 创建用户云端存储目录结构：`cloud_data/users/{user_id}/{clothes,char}/`
-6. 返回注册结果和云端用户ID
+2. **用户ID处理策略**：
+   - 如果提供了 `local_user_id`，则直接使用它作为云端用户ID
+   - 如果未提供 `local_user_id`，则生成新的UUID作为云端用户ID
+   - **推荐方式**: 本地客户端注册成功后，将本地用户ID传递给云端
+3. 调用 `cloud_db.create_user()` 检查用户名和邮箱是否已存在
+4. 生成密码哈希（SHA256）
+5. 创建用户记录到 `cloud_users` 表，包含以下字段：
+   - `user_id`: 云端用户ID（等于 `local_user_id` 或新生成的UUID）
+   - `local_user_id`: 关联的本地用户ID
+   - `username`: 用户名
+   - `email`: 邮箱
+   - `password_hash`: 密码哈希
+6. 创建用户云端存储目录结构：`cloud_data/users/{user_id}/{clothes,char}/`
+7. 返回注册结果和云端用户ID
 
-### 3. 云端用户登录验证
-验证用户登录凭据。
+**ID一致性优势**：
+- **路径统一**: 云端和本地使用相同的用户ID，文件路径完全一致
+- **简化同步**: 无需复杂的ID映射，直接按路径同步文件
+- **便于管理**: 管理员可通过用户ID直接定位云端和本地数据
+- **备份恢复**: 数据恢复时路径保持一致，避免重新组织
 
-**接口地址**：`POST /api/login`
-
-**实现方法**：`cloud_login()`
-
-**请求参数**：
-```json
-{
-  "username": "string",    // 必填，用户名
-  "password": "string"     // 必填，密码
-}
+**数据库记录示例**：
+```sql
+-- 当提供 local_user_id 时
+INSERT INTO cloud_users (
+    user_id,                                    -- f47ac10b-58cc-4372-a567-0e02b2c3d479
+    username,                                   -- testuser
+    email,                                      -- test@example.com
+    password_hash,                             -- sha256(password123)
+    local_user_id                              -- f47ac10b-58cc-4372-a567-0e02b2c3d479 (相同)
+) VALUES (?, ?, ?, ?, ?)
 ```
-
-**请求示例**：
-```json
-{
-  "username": "testuser",
-  "password": "password123"
-}
-```
-
-**响应示例**：
-```json
-{
-  "success": true,
-  "cloud_user": {
-    "user_id": "c-12345678-90ab-cdef-1234-567890abcdef",
-    "username": "testuser",
-    "email": "test@example.com",
-    "local_user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-  },
-  "message": "云端登录成功"
-}
-```
-
-**错误响应**：
-```json
-{
-  "success": false,
-  "error": "用户名或密码错误"
-}
-```
-
-**处理逻辑**：
-1. 验证 `username` 和 `password` 参数
-2. 计算密码的 SHA256 哈希值
-3. 调用 `cloud_db.verify_user()` 查询数据库验证凭据
-4. 返回用户信息（包括云端用户ID和关联的本地用户ID）
 
 ---
 
@@ -466,18 +442,23 @@ Host: localhost:8081
 #### 云端用户表 (cloud_users)
 ```sql
 CREATE TABLE cloud_users (
-    user_id TEXT PRIMARY KEY,           -- 云端用户ID (UUID)
+    user_id TEXT PRIMARY KEY,           -- 云端用户ID (与local_user_id一致)
     username TEXT UNIQUE NOT NULL,      -- 用户名
     email TEXT UNIQUE NOT NULL,         -- 邮箱
     password_hash TEXT NOT NULL,        -- 密码哈希(SHA256)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 创建时间
     last_sync TIMESTAMP,                -- 最后同步时间
     is_active BOOLEAN DEFAULT 1,        -- 是否激活
-    local_user_id TEXT,                 -- 关联的本地用户ID
+    local_user_id TEXT,                 -- 关联的本地用户ID (通常与user_id相同)
     total_images INTEGER DEFAULT 0,     -- 图片总数
     total_storage_size INTEGER DEFAULT 0 -- 存储总大小(字节)
 );
 ```
+
+**重要说明**: 
+- `user_id` 和 `local_user_id` 在正常情况下是相同的
+- 这种设计确保了本地和云端的文件路径完全一致
+- 便于数据同步和管理维护
 
 #### 云端图片表 (cloud_images)
 ```sql
@@ -522,7 +503,7 @@ CREATE TABLE sync_records (
 ```
 cloud_data/
 ├── users/
-│   ├── {cloud_user_id}/
+│   ├── {user_id}/                      # 与本地用户ID相同
 │   │   ├── clothes/                    # 服装类图片
 │   │   │   ├── clothes_20250625_143000_12345678.png
 │   │   │   └── clothes_20250625_143001_87654321.jpg
@@ -533,35 +514,10 @@ cloud_data/
 └── logs/                              # 日志文件目录
 ```
 
-### 核心处理函数
-
-#### 用户目录管理
-```python
-def get_user_cloud_dir(user_id, category='clothes'):
-    """获取用户云端存储目录"""
-    user_dir = CLOUD_USERS_DIR / user_id
-    user_dir.mkdir(exist_ok=True)
-    
-    category_dir = user_dir / category
-    category_dir.mkdir(exist_ok=True)
-    
-    return category_dir
+**路径一致性示例**：
 ```
-
-#### 图片文件保存
-```python
-def save_cloud_image_file(image_filename, image_data_url, user_id, category='clothes'):
-    """保存图片文件到云端存储"""
-    # 解析base64数据
-    header, data = image_data_url.split(',', 1)
-    image_bytes = base64.b64decode(data)
-    
-    # 获取云端存储目录并保存文件
-    cloud_dir = get_user_cloud_dir(user_id, category)
-    filepath = cloud_dir / image_filename
-    
-    with open(filepath, 'wb') as f:
-        f.write(image_bytes)
+本地路径: saved_images/f47ac10b-58cc-4372-a567-0e02b2c3d479/clothes/clothes_20250625_143000_12345678.png
+云端路径: cloud_data/users/f47ac10b-58cc-4372-a567-0e02b2c3d479/clothes/clothes_20250625_143000_12345678.png
 ```
 
 ---
@@ -597,6 +553,11 @@ HOST = "localhost"    # 绑定地址
 PORT = 8081          # 监听端口
 DEBUG = True         # 调试模式
 ```
+
+**ID一致性配置建议**：
+- 确保本地客户端在注册时传递 `local_user_id` 参数
+- 验证云端创建的目录结构与本地一致
+- 定期检查用户ID映射关系的正确性
 
 ### 日志配置
 ```python
@@ -705,9 +666,101 @@ python test_server.py
 - 支持clothes和char分类
 - 基于SQLite的数据存储
 
+### v1.1.0 (最新更新)
+- **用户ID一致性**: 云端用户ID与本地用户ID保持一致
+- **简化同步逻辑**: 移除复杂的ID映射，直接按路径同步
+- **路径统一**: 本地和云端文件路径完全相同
+- **优化注册流程**: 支持本地用户ID传递到云端
+
 ### 计划功能
 - 增量同步支持
 - 文件去重机制
 - 压缩存储优化
 - 多用户并发优化
 - 管理员API接口
+
+---
+
+## 云端文件路径接口
+
+### 6. 获取云端用户文件路径信息
+查询云端用户的图片文件存储路径和统计信息。
+
+**接口地址**：`GET /api/user/{user_id}/cloud/file-paths`
+
+**路径参数**：
+- `user_id`: 本地用户ID
+
+**请求参数**：
+- `category`: 分类过滤，可选值 "all"、"clothes"、"char"，默认 "all"
+- `include_files`: 是否包含文件列表，默认 "true"
+
+**请求示例**：
+```http
+GET /api/user/f47ac10b-58cc-4372-a567-0e02b2c3d479/cloud/file-paths?category=all&include_files=true HTTP/1.1
+Host: localhost:8081
+```
+
+**响应示例**：
+```json
+{
+  "success": true,
+  "local_user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "cloud_user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "cloud_base_path": "D:\\WorkSpace\\code\\my_idm_vton\\server_sample\\cloud_data",
+  "cloud_user_path": "D:\\WorkSpace\\code\\my_idm_vton\\server_sample\\cloud_data\\users\\f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "paths": {
+    "clothes": {
+      "directory": "D:\\WorkSpace\\code\\my_idm_vton\\server_sample\\cloud_data\\users\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes",
+      "exists": true,
+      "files": [
+        {
+          "filename": "clothes_20250625_143000_12345678.png",
+          "full_path": "D:\\WorkSpace\\code\\my_idm_vton\\server_sample\\cloud_data\\users\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes\\clothes_20250625_143000_12345678.png",
+          "relative_path": "users\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes\\clothes_20250625_143000_12345678.png",
+          "size": 245760,
+          "modified": "2025-06-25T14:35:05.123456"
+        }
+      ]
+    },
+    "char": {
+      "directory": "D:\\WorkSpace\\code\\my_idm_vton\\server_sample\\cloud_data\\users\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\char",
+      "exists": true,
+      "files": []
+    }
+  },
+  "statistics": {
+    "total_files": 1,
+    "total_size": 245760,
+    "total_size_mb": 0.23
+  },
+  "database_statistics": {
+    "total_images": 1,
+    "total_storage_size": 245760,
+    "total_storage_size_mb": 0.23,
+    "last_sync": "2025-06-25 14:35:05"
+  }
+}
+```
+
+**错误响应**：
+```json
+{
+  "success": false,
+  "error": "用户未在云端注册"
+}
+```
+
+**功能说明**：
+- 通过本地用户ID查询对应的云端文件路径
+- 支持按分类（clothes/char）查询文件信息
+- 提供完整路径和相对路径信息
+- 包含文件统计信息（数量、大小等）
+- 对比数据库记录与实际文件的一致性
+- **路径一致性**: 云端路径与本地路径结构相同，仅基础目录不同
+
+**用途**：
+- 验证云端同步的文件完整性
+- 获取云端存储的详细路径信息
+- 便于云端文件管理和维护
+- 支持数据一致性检查
