@@ -57,7 +57,7 @@ class ImageDatabase:
             )
         ''')
         
-        # 创建图片表
+        # 更新图片表，添加category字段
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS images (
                 id TEXT PRIMARY KEY,
@@ -73,9 +73,27 @@ class ImageDatabase:
                 context_info TEXT,
                 status TEXT DEFAULT 'saved',
                 cloud_synced BOOLEAN DEFAULT 0,
+                category TEXT DEFAULT 'clothes' CHECK (category IN ('clothes', 'char', 'vton_results', 'favorites')),
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         ''')
+        
+        # 检查是否需要添加category列到现有的images表
+        cursor.execute("PRAGMA table_info(images)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'category' not in columns:
+            cursor.execute('ALTER TABLE images ADD COLUMN category TEXT DEFAULT "clothes"')
+            print("已为images表添加category字段")
+            # 根据filename更新现有记录的category
+            cursor.execute('''
+                UPDATE images SET category = 'char' 
+                WHERE filename LIKE 'char_%'
+            ''')
+            cursor.execute('''
+                UPDATE images SET category = 'vton_results' 
+                WHERE filename LIKE 'vton_%'
+            ''')
+            print("已更新现有记录的category分类")
         
         # 创建任务表
         cursor.execute('''
@@ -88,6 +106,20 @@ class ImageDatabase:
                 image_id TEXT,
                 FOREIGN KEY (image_id) REFERENCES images (id),
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        ''')
+        
+        # 创建收藏表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS favorites (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                image_id TEXT NOT NULL,
+                favorite_type TEXT NOT NULL DEFAULT 'image',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id),
+                FOREIGN KEY (image_id) REFERENCES images (id),
+                UNIQUE(user_id, image_id, favorite_type)
             )
         ''')
         
@@ -162,15 +194,107 @@ class ImageDatabase:
             }
         return None
     
-    def save_image_record(self, image_id, user_id, filename, original_url, page_info, file_size, width, height, context_info):
+    def save_image_record(self, image_id, user_id, filename, original_url, page_info, file_size, width, height, context_info, category='clothes'):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO images (id, user_id, filename, original_url, page_url, page_title, file_size, image_width, image_height, context_info)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (image_id, user_id, filename, original_url, page_info.get('url'), page_info.get('title'), file_size, width, height, json.dumps(context_info)))
+            INSERT INTO images (id, user_id, filename, original_url, page_url, page_title, file_size, image_width, image_height, context_info, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (image_id, user_id, filename, original_url, page_info.get('url'), page_info.get('title'), file_size, width, height, json.dumps(context_info), category))
         conn.commit()
         conn.close()
+    
+    def add_to_favorites(self, user_id, image_id, favorite_type='image'):
+        """添加到收藏"""
+        if not image_id:
+            return False
+            
+        favorite_id = str(uuid.uuid4())
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO favorites (id, user_id, image_id, favorite_type)
+                VALUES (?, ?, ?, ?)
+            ''', (favorite_id, user_id, image_id, favorite_type))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            # 已经收藏过了
+            return False
+        finally:
+            conn.close()
+    
+    def remove_from_favorites(self, user_id, image_id, favorite_type='image'):
+        """从收藏中移除"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                DELETE FROM favorites 
+                WHERE user_id = ? AND image_id = ? AND favorite_type = ?
+            ''', (user_id, image_id, favorite_type))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+    
+    def is_favorited(self, user_id, image_id, favorite_type='image'):
+        """检查是否已收藏"""
+        if not image_id:
+            return False
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT COUNT(*) FROM favorites 
+                WHERE user_id = ? AND image_id = ? AND favorite_type = ?
+            ''', (user_id, image_id, favorite_type))
+            return cursor.fetchone()[0] > 0
+        finally:
+            conn.close()
+    
+    def get_user_favorites(self, user_id, favorite_type='image', limit=50, offset=0):
+        """获取用户收藏列表"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # 收藏的都是image类型，通过category区分
+            cursor.execute('''
+                SELECT i.*, f.created_at as favorited_at
+                FROM favorites f
+                JOIN images i ON f.image_id = i.id
+                WHERE f.user_id = ? AND f.favorite_type = ?
+                ORDER BY f.created_at DESC
+                LIMIT ? OFFSET ?
+            ''', (user_id, favorite_type, limit, offset))
+            
+            results = cursor.fetchall()
+            
+            favorites = []
+            for row in results:
+                favorites.append({
+                    'id': row[0],
+                    'user_id': row[1],
+                    'filename': row[2],
+                    'original_url': row[3],
+                    'page_url': row[4],
+                    'page_title': row[5],
+                    'saved_at': row[6],
+                    'file_size': row[7],
+                    'image_width': row[8],
+                    'image_height': row[9],
+                    'context_info': json.loads(row[10]) if row[10] else {},
+                    'status': row[11],
+                    'cloud_synced': bool(row[12]) if len(row) > 12 else False,
+                    'category': row[13] if len(row) > 13 else 'clothes',
+                    'favorited_at': row[-1],
+                    'is_favorited': True  # 这些都是收藏的
+                })
+            return favorites
+                
+        finally:
+            conn.close()
     
     def create_task(self, task_id, user_id, image_id):
         conn = sqlite3.connect(self.db_path)
@@ -253,13 +377,20 @@ class ImageDatabase:
             })
         return images
     
-    def get_user_images(self, user_id, limit=50, offset=0):
-        """获取用户的图片列表"""
+    def get_user_images(self, user_id, category=None, limit=50, offset=0):
+        """获取用户的图片列表，支持按分类过滤"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM images WHERE user_id = ? ORDER BY saved_at DESC LIMIT ? OFFSET ?
-        ''', (user_id, limit, offset))
+        
+        if category:
+            cursor.execute('''
+                SELECT * FROM images WHERE user_id = ? AND category = ? ORDER BY saved_at DESC LIMIT ? OFFSET ?
+            ''', (user_id, category, limit, offset))
+        else:
+            cursor.execute('''
+                SELECT * FROM images WHERE user_id = ? ORDER BY saved_at DESC LIMIT ? OFFSET ?
+            ''', (user_id, limit, offset))
+        
         results = cursor.fetchall()
         conn.close()
         
@@ -278,7 +409,9 @@ class ImageDatabase:
                 'image_height': row[9],
                 'context_info': json.loads(row[10]) if row[10] else {},
                 'status': row[11],
-                'cloud_synced': bool(row[12]) if len(row) > 12 else False
+                'cloud_synced': bool(row[12]) if len(row) > 12 else False,
+                'category': row[13] if len(row) > 13 else 'clothes',
+                'is_favorited': self.is_favorited(user_id, row[0], favorite_type='image')
             })
         return images
     
@@ -290,14 +423,55 @@ class ImageDatabase:
         conn.close()
         return count
     
-    def get_user_image_count(self, user_id):
-        """获取用户图片数量"""
+    def get_user_image_count(self, user_id, category=None):
+        """获取用户图片数量，支持按分类统计"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM images WHERE user_id = ?', (user_id,))
+        
+        if category:
+            cursor.execute('SELECT COUNT(*) FROM images WHERE user_id = ? AND category = ?', (user_id, category))
+        else:
+            cursor.execute('SELECT COUNT(*) FROM images WHERE user_id = ?', (user_id,))
+            
         count = cursor.fetchone()[0]
         conn.close()
         return count
+    
+    def get_image_by_filename(self, user_id, filename):
+        """根据用户ID和文件名获取图片信息"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT id, user_id, filename, original_url, page_url, page_title, 
+                       saved_at, file_size, image_width, image_height, context_info, 
+                       status, cloud_synced, category
+                FROM images 
+                WHERE user_id = ? AND filename = ?
+                LIMIT 1
+            ''', (user_id, filename))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'filename': row[2],
+                    'original_url': row[3],
+                    'page_url': row[4],
+                    'page_title': row[5],
+                    'saved_at': row[6],
+                    'file_size': row[7],
+                    'image_width': row[8],
+                    'image_height': row[9],
+                    'context_info': json.loads(row[10]) if row[10] else {},
+                    'status': row[11],
+                    'cloud_synced': bool(row[12]) if len(row) > 12 else False,
+                    'category': row[13] if len(row) > 13 else 'clothes'
+                }
+            return None
+        finally:
+            conn.close()
 
 # 初始化数据库
 db = ImageDatabase(DB_PATH)
@@ -765,7 +939,7 @@ def save_image_from_data(image_data, original_url, page_info, user_id, category=
         
         db.save_image_record(
             image_id, user_id, filename, original_url, page_info or {}, 
-            file_size, width, height, context_info
+            file_size, width, height, context_info, category
         )
         
         result = {
@@ -895,10 +1069,11 @@ def get_user_images():
     user_id = session['user_id']
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
+    category = request.args.get('category')  # 支持分类过滤
     offset = (page - 1) * per_page
     
-    images = db.get_user_images(user_id, per_page, offset)
-    total = db.get_user_image_count(user_id)
+    images = db.get_user_images(user_id, category, per_page, offset)
+    total = db.get_user_image_count(user_id, category)
     
     # 为每个图片添加预览URL
     for image in images:
@@ -910,7 +1085,8 @@ def get_user_images():
         'total': total,
         'page': page,
         'per_page': per_page,
-        'pages': (total + per_page - 1) // per_page
+        'pages': (total + per_page - 1) // per_page,
+        'category': category
     })
 
 @app.route('/api/user/<user_id>/images/<filename>')
@@ -926,15 +1102,20 @@ def serve_user_image(user_id, filename):
         category = 'char'
     elif filename.startswith('clothes_'):
         category = 'clothes'
+    elif filename.startswith('vton_result_'):
+        category = 'vton_results'
     
     user_save_dir = get_user_save_dir(user_id, category)
     filepath = user_save_dir / filename
     
-    # 如果在默认分类中找不到，尝试在另一个分类中查找
+    # 如果在默认分类中找不到，尝试在其他分类中查找
     if not filepath.exists():
-        other_category = 'char' if category == 'clothes' else 'clothes'
-        user_save_dir = get_user_save_dir(user_id, other_category)
-        filepath = user_save_dir / filename
+        for other_category in ['char', 'clothes', 'vton_results']:
+            if other_category != category:
+                user_save_dir = get_user_save_dir(user_id, other_category)
+                filepath = user_save_dir / filename
+                if filepath.exists():
+                    break
     
     if filepath.exists():
         return send_file(filepath)
@@ -978,7 +1159,7 @@ def serve_user_image_by_category(user_id, category, filename):
         return jsonify({'error': '权限不足'}), 403
     
     # 验证分类参数
-    if category not in ['clothes', 'char']:
+    if category not in ['clothes', 'char', 'vton_results']:
         return jsonify({'error': '无效的分类'}), 400
     
     user_save_dir = get_user_save_dir(user_id, category)
@@ -1705,30 +1886,75 @@ def virtual_tryon():
                 'error': vton_result['error']
             }), 500
         
-        # 保存试穿结果
-        result_filename = f"vton_result_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{seed}.png"
-        mask_filename = f"vton_mask_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{seed}.png"
+        # 保存试穿结果 - 只保存result图片
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        result_filename = f"vton_result_{timestamp}_{seed}.png"
         
-        # 创建试穿结果目录
-        vton_results_dir = user_dir / "vton_results"
-        vton_results_dir.mkdir(exist_ok=True)
-        
+        # 使用vton_results分类目录
+        vton_results_dir = get_user_save_dir(user_id, 'vton_results')
         result_path = vton_results_dir / result_filename
-        mask_path = vton_results_dir / mask_filename
         
+        # 获取服装图片的原始页面信息（在保存前获取）
+        garment_image_info = db.get_image_by_filename(user_id, garment_filename)
+        
+        result_image_id = None
         # 保存试穿结果图片
         if base64_to_image(vton_result['result_image'], result_path):
             print(f"试穿结果已保存: {result_path}")
+            
+            # 将试穿结果保存到images表中，分类为vton_results
+            try:
+                from PIL import Image
+                with Image.open(result_path) as img:
+                    width, height = img.size
+                file_size = result_path.stat().st_size
+                
+                # 构造页面信息 - 使用服装图片的原页面信息
+                if garment_image_info and garment_image_info.get('page_url') and garment_image_info['page_url'].strip() and garment_image_info.get('original_url') not in ['clipboard', 'vton_result', 'file_upload']:
+                    # 如果服装图片有原始页面信息，使用它
+                    page_info = {
+                        'url': garment_image_info['page_url'],  # 使用页面URL而不是图片URL
+                        'title': garment_image_info.get('page_title', f'虚拟试穿结果 - {garment_filename}'),
+                        'source': 'vton_result_from_garment',
+                        'original_garment_url': garment_image_info['original_url'],
+                        'original_page_url': garment_image_info.get('page_url', ''),
+                        'human_image': human_filename,
+                        'garment_image': garment_filename
+                    }
+                else:
+                    # 如果服装图片没有原始页面信息，使用默认信息
+                    page_info = {
+                        'url': 'vton_result',
+                        'title': f'虚拟试穿结果 - {human_filename} + {garment_filename}',
+                        'source': 'vton_api',
+                        'human_image': human_filename,
+                        'garment_image': garment_filename
+                    }
+                
+                context_info = {
+                    'vton_parameters': vton_result['parameters'],
+                    'processing_time': vton_result['processing_time'],
+                    'human_image': human_filename,
+                    'garment_image': garment_filename,
+                    'category': 'vton_results',
+                    'garment_original_info': garment_image_info  # 保存服装图片的完整信息
+                }
+                
+                # 保存到images表
+                result_image_id = str(uuid.uuid4())
+                db.save_image_record(
+                    result_image_id, user_id, result_filename, 'vton_result', 
+                    page_info, file_size, width, height, context_info, 'vton_results'
+                )
+                print(f"试穿结果已保存到图片库: {result_image_id}")
+                
+            except Exception as e:
+                print(f"保存试穿结果到图片库失败: {e}")
         else:
             print(f"保存试穿结果失败: {result_path}")
+            return jsonify({'success': False, 'error': '保存试穿结果失败'}), 500
         
-        # 保存遮罩图片
-        if base64_to_image(vton_result['mask_image'], mask_path):
-            print(f"遮罩图片已保存: {mask_path}")
-        else:
-            print(f"保存遮罩图片失败: {mask_path}")
-        
-        # 记录试穿历史到数据库（可选）
+        # 记录试穿历史到数据库
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -1741,11 +1967,12 @@ def virtual_tryon():
                     human_image TEXT NOT NULL,
                     garment_image TEXT NOT NULL,
                     result_image TEXT NOT NULL,
-                    mask_image TEXT,
+                    result_image_id TEXT,
                     parameters TEXT,
                     processing_time REAL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                    FOREIGN KEY (user_id) REFERENCES users (user_id),
+                    FOREIGN KEY (result_image_id) REFERENCES images (id)
                 )
             ''')
             
@@ -1753,11 +1980,11 @@ def virtual_tryon():
             vton_id = str(uuid.uuid4())
             cursor.execute('''
                 INSERT INTO vton_history 
-                (id, user_id, human_image, garment_image, result_image, mask_image, parameters, processing_time)
+                (id, user_id, human_image, garment_image, result_image, result_image_id, parameters, processing_time)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 vton_id, user_id, human_filename, garment_filename,
-                result_filename, mask_filename,
+                result_filename, result_image_id,
                 json.dumps(vton_result['parameters']),
                 vton_result['processing_time']
             ))
@@ -1775,15 +2002,19 @@ def virtual_tryon():
             'result': {
                 'vton_id': vton_id,
                 'result_image': vton_result['result_image'],  # base64格式，前端可直接显示
-                'mask_image': vton_result['mask_image'],
                 'result_filename': result_filename,
-                'mask_filename': mask_filename,
-                'result_url': url_for('serve_vton_result', user_id=user_id, filename=result_filename),
-                'mask_url': url_for('serve_vton_result', user_id=user_id, filename=mask_filename),
+                'result_image_id': result_image_id,  # 添加图片ID用于收藏
+                'result_url': url_for('serve_user_image_by_category', user_id=user_id, category='vton_results', filename=result_filename),
                 'processing_time': vton_result['processing_time'],
                 'parameters': vton_result['parameters'],
                 'human_image': human_filename,
-                'garment_image': garment_filename
+                'garment_image': garment_filename,
+                'is_favorited': db.is_favorited(user_id, result_image_id, favorite_type='image') if result_image_id else False,
+                'original_page_url': garment_image_info.get('page_url') if garment_image_info else None,
+                'original_page_title': garment_image_info.get('page_title') if garment_image_info else None,
+                'has_original_page': bool(garment_image_info and garment_image_info.get('page_url') and 
+                                        garment_image_info.get('page_url').strip() and
+                                        garment_image_info.get('original_url') not in ['clipboard', 'vton_result', 'file_upload'])
             }
         })
         
@@ -1854,6 +2085,9 @@ def get_vton_history():
             except:
                 parameters = {}
             
+            vton_result_id = record[0]
+            is_favorited = db.is_favorited(user_id, vton_result_id=vton_result_id, favorite_type='vton_result')
+            
             history.append({
                 'id': record[0],
                 'human_image': record[1],
@@ -1864,7 +2098,8 @@ def get_vton_history():
                 'mask_url': url_for('serve_vton_result', user_id=user_id, filename=record[4]) if record[4] else None,
                 'parameters': parameters,
                 'processing_time': record[6],
-                'created_at': record[7]
+                'created_at': record[7],
+                'is_favorited': is_favorited
             })
         
         return jsonify({
@@ -1895,10 +2130,139 @@ def serve_vton_result(user_id, filename):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    print("启动图片处理服务器...")
-    print(f"保存目录: {BASE_SAVE_DIR.absolute()}")
-    print(f"数据库: {DB_PATH}")
-    print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
-    print("WebUI地址: http://localhost:5000")
-    app.run(host='localhost', port=5000, debug=True)
+# 收藏功能API
+@app.route('/api/favorites', methods=['POST'])
+@login_required
+def add_favorite():
+    """添加收藏"""
+    try:
+        user_id = session['user_id']
+        data = request.get_json()
+        
+        image_id = data.get('image_id')
+        favorite_type = data.get('type', 'image')
+        
+        if not image_id:
+            return jsonify({'success': False, 'error': '缺少image_id参数'}), 400
+        
+        if favorite_type not in ['image']:
+            return jsonify({'success': False, 'error': '无效的收藏类型'}), 400
+        
+        success = db.add_to_favorites(user_id, image_id, favorite_type)
+        
+        if success:
+            return jsonify({'success': True, 'message': '收藏成功'})
+        else:
+            return jsonify({'success': False, 'message': '已经收藏过了'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/favorites', methods=['DELETE'])
+@login_required
+def remove_favorite():
+    """移除收藏"""
+    try:
+        user_id = session['user_id']
+        data = request.get_json()
+        
+        image_id = data.get('image_id')
+        favorite_type = data.get('type', 'image')
+        
+        if not image_id:
+            return jsonify({'success': False, 'error': '缺少image_id参数'}), 400
+        
+        success = db.remove_from_favorites(user_id, image_id, favorite_type)
+        
+        if success:
+            return jsonify({'success': True, 'message': '取消收藏成功'})
+        else:
+            return jsonify({'success': False, 'message': '收藏记录不存在'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/favorites', methods=['GET'])
+@login_required
+def get_favorites():
+    """获取收藏列表"""
+    try:
+        user_id = session['user_id']
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        favorite_type = request.args.get('type', 'image')
+        offset = (page - 1) * per_page
+        
+        favorites = db.get_user_favorites(user_id, favorite_type, per_page, offset)
+        
+        # 获取收藏总数
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) FROM favorites 
+            WHERE user_id = ? AND favorite_type = ?
+        ''', (user_id, favorite_type))
+        total_count = cursor.fetchone()[0]
+        conn.close()
+        
+        total_pages = (total_count + per_page - 1) // per_page  # 向上取整
+        
+        # 为收藏的图片添加预览URL
+        for favorite in favorites:
+            if favorite_type == 'image':
+                category = favorite.get('category', 'clothes')
+                if category in ['clothes', 'char', 'vton_results']:
+                    favorite['preview_url'] = url_for('serve_user_image_by_category', 
+                                                    user_id=user_id, 
+                                                    category=category, 
+                                                    filename=favorite['filename'])
+                    favorite['thumbnail_url'] = url_for('serve_user_image_by_category', 
+                                                      user_id=user_id, 
+                                                      category=category, 
+                                                      filename=favorite['filename'])
+                else:
+                    favorite['preview_url'] = url_for('serve_user_image', user_id=user_id, filename=favorite['filename'])
+                    favorite['thumbnail_url'] = url_for('serve_user_thumbnail', user_id=user_id, filename=favorite['filename'])
+        
+        return jsonify({
+            'favorites': favorites,
+            'page': page,
+            'per_page': per_page,
+            'pages': total_pages,
+            'total': total_count,
+            'type': favorite_type
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/categories/stats', methods=['GET'])
+@login_required
+def get_category_stats():
+    """获取分类统计信息"""
+    try:
+        user_id = session['user_id']
+        
+        categories = ['clothes', 'char', 'vton_results', 'favorites']
+        stats = {}
+        
+        for category in categories:
+            if category == 'favorites':
+                # 收藏的统计
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM favorites WHERE user_id = ?', (user_id,))
+                count = cursor.fetchone()[0]
+                conn.close()
+                stats[category] = count
+            else:
+                stats[category] = db.get_user_image_count(user_id, category)
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'total': sum(stats.values())
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

@@ -39,6 +39,42 @@
         </div>
     </div>
 
+    <!-- 分类标签页 -->
+    <div class="mb-4">
+        <ul class="nav nav-pills" id="categoryTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="all-tab" data-category="" onclick="switchCategory('')">
+                    <i class="bi bi-grid-3x3-gap"></i> 全部
+                    <span class="badge bg-secondary ms-1" id="all-count">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="clothes-tab" data-category="clothes" onclick="switchCategory('clothes')">
+                    <i class="bi bi-bag"></i> 服装
+                    <span class="badge bg-secondary ms-1" id="clothes-count">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="char-tab" data-category="char" onclick="switchCategory('char')">
+                    <i class="bi bi-person"></i> 人物
+                    <span class="badge bg-secondary ms-1" id="char-count">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="vton_results-tab" data-category="vton_results" onclick="switchCategory('vton_results')">
+                    <i class="bi bi-magic"></i> 试穿结果
+                    <span class="badge bg-secondary ms-1" id="vton_results-count">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="favorites-tab" data-category="favorites" onclick="switchCategory('favorites')">
+                    <i class="bi bi-heart-fill"></i> 收藏
+                    <span class="badge bg-secondary ms-1" id="favorites-count">0</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+
     <div class="row mb-3">
         <div class="col-md-6">
             <input type="text" class="form-control" id="searchInput" placeholder="搜索页面标题或URL...">
@@ -77,6 +113,7 @@
     let currentPage = 1;
     let totalPages = 1;
     let currentViewMode = 'grid';
+    let currentCategory = ''; // 当前选中的分类
 
     document.addEventListener('DOMContentLoaded', function () {
         // 监听认证状态变化
@@ -130,10 +167,51 @@
         if (isLoggedIn) {
             loginPrompt.classList.add('d-none');
             loggedInContent.classList.remove('d-none');
+            loadCategoryStats();
             loadImages();
         } else {
             loginPrompt.classList.remove('d-none');
             loggedInContent.classList.add('d-none');
+        }
+    }
+
+    function switchCategory(category) {
+        currentCategory = category;
+        currentPage = 1;
+        
+        // 更新标签页状态
+        document.querySelectorAll('#categoryTabs .nav-link').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        
+        if (category === '') {
+            document.getElementById('all-tab').classList.add('active');
+            loadImages();
+        } else if (category === 'favorites') {
+            document.getElementById('favorites-tab').classList.add('active');
+            loadFavorites();
+        } else {
+            document.getElementById(category + '-tab').classList.add('active');
+            loadImages();
+        }
+    }
+
+    async function loadCategoryStats() {
+        try {
+            const response = await fetch('/api/categories/stats');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    const stats = data.stats;
+                    document.getElementById('all-count').textContent = data.total;
+                    document.getElementById('clothes-count').textContent = stats.clothes || 0;
+                    document.getElementById('char-count').textContent = stats.char || 0;
+                    document.getElementById('vton_results-count').textContent = stats.vton_results || 0;
+                    document.getElementById('favorites-count').textContent = stats.favorites || 0;
+                }
+            }
+        } catch (error) {
+            console.error('加载分类统计失败:', error);
         }
     }
 
@@ -145,7 +223,14 @@
 
         try {
             const perPage = document.getElementById('perPageSelect').value;
-            const response = await fetch(`/api/user/images?page=${currentPage}&per_page=${perPage}`);
+            let url = `/api/user/images?page=${currentPage}&per_page=${perPage}`;
+            
+            // 添加分类过滤
+            if (currentCategory) {
+                url += `&category=${currentCategory}`;
+            }
+            
+            const response = await fetch(url);
 
             if (response.status === 401) {
                 showAlert('登录已过期，请重新登录', 'warning');
@@ -165,7 +250,8 @@
                 totalPages = data.pages;
                 renderPagination();
             } else {
-                container.innerHTML = '<div class="text-center"><p class="text-muted">暂无图片</p></div>';
+                const categoryName = getCategoryDisplayName(currentCategory);
+                container.innerHTML = `<div class="text-center"><p class="text-muted">暂无${categoryName}图片</p></div>`;
             }
 
         } catch (error) {
@@ -174,20 +260,138 @@
         }
     }
 
-    function renderGridView(images) {
+    async function loadFavorites() {
+        if (!currentUser) return;
+
+        const container = document.getElementById('imagesContainer');
+        container.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+
+        try {
+            const perPage = document.getElementById('perPageSelect').value;
+            const response = await fetch(`/api/favorites?page=${currentPage}&per_page=${perPage}&type=image`);
+
+            if (response.status === 401) {
+                showAlert('登录已过期，请重新登录', 'warning');
+                updateNavbar(false);
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.favorites && data.favorites.length > 0) {
+                if (currentViewMode === 'grid') {
+                    renderGridView(data.favorites, true);
+                } else {
+                    renderListView(data.favorites, true);
+                }
+
+                // 从后端API获取分页信息，如果没有则基于数据计算
+                totalPages = data.pages || Math.ceil(data.favorites.length / perPage);
+                renderPagination();
+            } else {
+                container.innerHTML = '<div class="text-center"><p class="text-muted">暂无收藏的图片</p></div>';
+                totalPages = 1;
+                renderPagination();
+            }
+
+        } catch (error) {
+            console.error('加载收藏失败:', error);
+            container.innerHTML = '<div class="text-center"><p class="text-danger">加载失败</p></div>';
+        }
+    }
+
+    async function toggleFavorite(imageId, isCurrentlyFavorited) {
+        try {
+            const method = isCurrentlyFavorited ? 'DELETE' : 'POST';
+            const response = await fetch('/api/favorites', {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    image_id: imageId,
+                    type: 'image'
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showAlert(data.message, 'success');
+                // 根据当前分类重新加载图片和统计
+                if (currentCategory === 'favorites') {
+                    loadFavorites();
+                } else {
+                    loadImages();
+                }
+                loadCategoryStats();
+            } else {
+                showAlert(data.message || '操作失败', 'error');
+            }
+        } catch (error) {
+            console.error('收藏操作失败:', error);
+            showAlert('操作失败', 'error');
+        }
+    }
+
+    function getCategoryDisplayName(category) {
+        const names = {
+            'clothes': '服装',
+            'char': '人物',
+            'vton_results': '试穿结果',
+            'favorites': '收藏的',
+            '': ''
+        };
+        return names[category] || '';
+    }
+
+    function getCategoryBadgeClass(category) {
+        const classes = {
+            'clothes': 'bg-primary',
+            'char': 'bg-success',
+            'vton_results': 'bg-warning',
+            'favorites': 'bg-danger'
+        };
+        return classes[category] || 'bg-secondary';
+    }
+
+    function getCategoryIcon(category) {
+        switch (category) {
+            case 'clothes': return 'bi-bag';
+            case 'char': return 'bi-person';
+            case 'vton_results': return 'bi-magic';
+            default: return 'bi-image';
+        }
+    }
+
+    function renderGridView(images, isFavorites = false) {
         const container = document.getElementById('imagesContainer');
         container.innerHTML = `
         <div class="row">
             ${images.map(image => `
                 <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-4">
                     <div class="card image-card h-100">
-                        <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
-                             alt="${image.page_title || '未知页面'}"
-                             onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                        <div class="position-relative">
+                            <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
+                                 alt="${image.page_title || '未知页面'}"
+                                 onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                            
+                            <!-- 分类标签 -->
+                            <span class="position-absolute top-0 start-0 badge ${getCategoryBadgeClass(image.category)} m-1">
+                                <i class="bi ${getCategoryIcon(image.category)}"></i> ${getCategoryDisplayName(image.category)}
+                            </span>
+                            
+                            <!-- 收藏按钮 -->
+                            <button class="btn btn-sm position-absolute top-0 end-0 m-1 favorite-btn ${image.is_favorited ? 'btn-danger' : 'btn-outline-light'}" 
+                                    onclick="toggleFavorite('${image.id}', ${image.is_favorited})" 
+                                    title="${image.is_favorited ? '取消收藏' : '添加收藏'}">
+                                <i class="bi ${image.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                            </button>
+                        </div>
+                        
                         <div class="card-body p-2">
                             <h6 class="card-title small">${truncateText(image.page_title || '未知页面', 25)}</h6>
                             <p class="card-text page-info small mb-1">
-                                <i class="bi bi-calendar"></i> ${formatDate(image.saved_at)}
+                                <i class="bi bi-calendar"></i> ${formatDate(isFavorites ? image.favorited_at : image.saved_at)}
                             </p>
                             <p class="card-text page-info small mb-1">
                                 <i class="bi bi-file-earmark"></i> ${formatFileSize(image.file_size)}
@@ -198,11 +402,11 @@
                                 </p>
                             ` : ''}
                             ${image.cloud_synced ? `
-                                <p class="card-text page-info small">
+                                <p class="card-text page_info small">
                                     <i class="bi bi-cloud-check text-success"></i> 已同步
                                 </p>
                             ` : `
-                                <p class="card-text page-info small">
+                                <p class="card-text page_info small">
                                     <i class="bi bi-cloud text-muted"></i> 未同步
                                 </p>
                             `}
@@ -214,7 +418,7 @@
     `;
     }
 
-    function renderListView(images) {
+    function renderListView(images, isFavorites = false) {
         const container = document.getElementById('imagesContainer');
         container.innerHTML = `
         <div class="list-group">
@@ -222,24 +426,40 @@
                 <div class="list-group-item">
                     <div class="row align-items-center">
                         <div class="col-auto">
-                            <img src="${image.thumbnail_url}" class="thumbnail" style="max-width: 80px; max-height: 60px;"
-                                 alt="${image.page_title || '未知页面'}"
-                                 onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                            <div class="position-relative d-inline-block">
+                                <img src="${image.thumbnail_url}" class="thumbnail" style="max-width: 80px; max-height: 60px;"
+                                     alt="${image.page_title || '未知页面'}"
+                                     onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                                
+                                <!-- 分类标签 -->
+                                <span class="position-absolute top-0 start-0 badge ${getCategoryBadgeClass(image.category)} small">
+                                    <i class="bi ${getCategoryIcon(image.category)}"></i>
+                                </span>
+                            </div>
                         </div>
                         <div class="col">
-                            <h6 class="mb-1">${image.page_title || '未知页面'}</h6>
-                            <p class="mb-1 text-muted small">${image.page_url || ''}</p>
-                            <small class="text-muted">
-                                ${formatDate(image.saved_at)} | ${formatFileSize(image.file_size)}
-                                ${image.image_width && image.image_height ? ` | ${image.image_width}×${image.image_height}` : ''}
-                                ${image.cloud_synced ? ' | <i class="bi bi-cloud-check text-success"></i> 已同步' : ' | <i class="bi bi-cloud text-muted"></i> 未同步'}
-                            </small>
-                        </div>
-                        <div class="col-auto">
-                            <button class="btn btn-sm btn-outline-primary" 
-                                    onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
-                                <i class="bi bi-eye"></i> 预览
-                            </button>
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${image.page_title || '未知页面'}</h6>
+                                    <p class="mb-1 text-muted small">${image.page_url || ''}</p>
+                                    <small class="text-muted">
+                                        ${formatDate(isFavorites ? image.favorited_at : image.saved_at)} | ${formatFileSize(image.file_size)}
+                                        ${image.image_width && image.image_height ? ` | ${image.image_width}×${image.image_height}` : ''}
+                                        ${image.cloud_synced ? ' | <i class="bi bi-cloud-check text-success"></i> 已同步' : ' | <i class="bi bi-cloud text-muted"></i> 未同步'}
+                                    </small>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm ${image.is_favorited ? 'btn-danger' : 'btn-outline-danger'}" 
+                                            onclick="toggleFavorite('${image.id}', ${image.is_favorited})" 
+                                            title="${image.is_favorited ? '取消收藏' : '添加收藏'}">
+                                        <i class="bi ${image.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                                        <i class="bi bi-eye"></i> 预览
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

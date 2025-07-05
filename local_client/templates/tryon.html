@@ -228,6 +228,9 @@
                                 <!-- 结果信息 -->
                             </div>
                             <div>
+                                <button id="favoriteResultBtn" class="btn btn-outline-danger me-2 d-none" onclick="toggleResultFavorite()">
+                                    <i class="bi bi-heart"></i> <span id="favoriteResultText">收藏结果</span>
+                                </button>
                                 <button class="btn btn-outline-primary me-2" onclick="downloadResult()">
                                     <i class="bi bi-download"></i> 下载结果
                                 </button>
@@ -271,6 +274,7 @@
     let selectedHumanImage = null;
     let selectedGarmentImage = null;
     let tryonInProgress = false;
+    let currentTryonResult = null; // 存储当前试穿结果
 
     document.addEventListener('DOMContentLoaded', function() {
         // 添加页面加载动效
@@ -652,15 +656,51 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    // 显示结果
+                    // 存储当前试穿结果
+                    currentTryonResult = data.result;
+                    
+                    // 显示结果 - 只显示result图片
                     document.getElementById('resultImage').src = data.result.result_image;
-                    document.getElementById('maskImage').src = data.result.mask_image;
+                    
+                    // 隐藏mask图片显示
+                    const maskImageContainer = document.getElementById('maskImage').parentElement;
+                    if (maskImageContainer) {
+                        maskImageContainer.style.display = 'none';
+                    }
                     
                     document.getElementById('resultInfo').innerHTML = `
-                        <small>
-                            处理时间: ${data.result.processing_time.toFixed(2)}秒 | 
-                            参数: 步骤=${data.result.parameters.denoise_steps}, 种子=${data.result.parameters.seed}
-                        </small>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <small class="text-muted">
+                                    处理时间: ${data.result.processing_time.toFixed(2)}秒 | 
+                                    参数: 步骤=${data.result.parameters.denoise_steps}, 种子=${data.result.parameters.seed}
+                                </small>
+                                ${data.result.has_original_page ? `
+                                    <br>
+                                    <small class="text-info">
+                                        <i class="bi bi-info-circle"></i> 
+                                        服装来源: ${data.result.original_page_title || '网页图片'}
+                                    </small>
+                                ` : ''}
+                            </div>
+                            <div class="btn-group">
+                                ${data.result.has_original_page ? `
+                                    <button class="btn btn-sm btn-outline-info" 
+                                            onclick="visitOriginalPage('${data.result.original_page_url}')" 
+                                            title="访问服装原页面">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        访问原页面
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-sm ${data.result.is_favorited ? 'btn-danger' : 'btn-outline-danger'}" 
+                                        id="favoriteResultBtn" 
+                                        onclick="toggleTryonResultFavorite()" 
+                                        title="${data.result.is_favorited ? '取消收藏' : '添加收藏'}">
+                                    <i class="bi ${data.result.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                                    ${data.result.is_favorited ? '已收藏' : '收藏'}
+                                </button>
+                            </div>
+                        </div>
                     `;
                     
                     progressDiv.classList.add('d-none');
@@ -730,7 +770,12 @@
                             <p><strong>服装图片:</strong> ${item.garment_image}</p>
                             <p><strong>处理时间:</strong> ${item.processing_time?.toFixed(2) || 'N/A'}秒</p>
                             <p><strong>创建时间:</strong> ${new Date(item.created_at).toLocaleString()}</p>
-                            <div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm ${item.is_favorited ? 'btn-danger' : 'btn-outline-danger'}" 
+                                        onclick="toggleHistoryFavorite('${item.id}', ${item.is_favorited})">
+                                    <i class="bi ${item.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i> 
+                                    ${item.is_favorited ? '已收藏' : '收藏'}
+                                </button>
                                 <a href="${item.result_url}" class="btn btn-sm btn-outline-primary" target="_blank">
                                     <i class="bi bi-eye"></i> 查看结果
                                 </a>
@@ -759,6 +804,91 @@
                     <p>加载失败</p>
                 </div>
             `;
+        }
+    }
+
+    // 收藏试穿结果
+    async function toggleResultFavorite() {
+        if (!currentTryonResult) {
+            showToast('没有试穿结果可收藏', 'warning');
+            return;
+        }
+
+        const favoriteBtn = document.getElementById('favoriteResultBtn');
+        const favoriteText = document.getElementById('favoriteResultText');
+        const icon = favoriteBtn.querySelector('i');
+        
+        const isFavorited = icon.classList.contains('bi-heart-fill');
+        
+        try {
+            const method = isFavorited ? 'DELETE' : 'POST';
+            const response = await fetch('/api/favorites', {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    vton_result_id: currentTryonResult.vton_id,
+                    type: 'vton_result'
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                if (isFavorited) {
+                    // 取消收藏
+                    icon.classList.remove('bi-heart-fill');
+                    icon.classList.add('bi-heart');
+                    favoriteBtn.classList.remove('btn-danger');
+                    favoriteBtn.classList.add('btn-outline-danger');
+                    favoriteText.textContent = '收藏结果';
+                    showToast('已取消收藏', 'success');
+                } else {
+                    // 添加收藏
+                    icon.classList.remove('bi-heart');
+                    icon.classList.add('bi-heart-fill');
+                    favoriteBtn.classList.remove('btn-outline-danger');
+                    favoriteBtn.classList.add('btn-danger');
+                    favoriteText.textContent = '已收藏';
+                    showToast('收藏成功', 'success');
+                }
+            } else {
+                showToast(data.error || '操作失败', 'error');
+            }
+        } catch (error) {
+            console.error('收藏操作失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 收藏历史试穿结果
+    async function toggleHistoryFavorite(vtonResultId, isFavorited) {
+        try {
+            const method = isFavorited ? 'DELETE' : 'POST';
+            const response = await fetch('/api/favorites', {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    vton_result_id: vtonResultId,
+                    type: 'vton_result'
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast(isFavorited ? '已取消收藏' : '收藏成功', 'success');
+                // 重新加载历史记录以更新状态
+                showVtonHistory();
+            } else {
+                showToast(data.error || '操作失败', 'error');
+            }
+        } catch (error) {
+            console.error('收藏操作失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
         }
     }
 
@@ -797,6 +927,69 @@
         container.style.zIndex = '9999';
         document.body.appendChild(container);
         return container;
+    }
+
+    async function toggleTryonResultFavorite() {
+        if (!currentTryonResult || !currentTryonResult.result_image_id) {
+            showAlert('无法收藏：缺少结果图片ID', 'error');
+            return;
+        }
+
+        try {
+            const isCurrentlyFavorited = currentTryonResult.is_favorited;
+            const method = isCurrentlyFavorited ? 'DELETE' : 'POST';
+            
+            const response = await fetch('/api/favorites', {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    image_id: currentTryonResult.result_image_id,
+                    type: 'image'
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // 更新按钮状态
+                const favoriteBtn = document.getElementById('favoriteResultBtn');
+                const newIsFavorited = !isCurrentlyFavorited;
+                
+                favoriteBtn.className = `btn btn-sm ${newIsFavorited ? 'btn-danger' : 'btn-outline-danger'}`;
+                favoriteBtn.innerHTML = `
+                    <i class="bi ${newIsFavorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
+                    ${newIsFavorited ? '已收藏' : '收藏'}
+                `;
+                favoriteBtn.title = newIsFavorited ? '取消收藏' : '添加收藏';
+                
+                // 更新当前结果状态
+                currentTryonResult.is_favorited = newIsFavorited;
+                
+                showAlert(data.message, 'success');
+            } else {
+                showAlert(data.message || '操作失败', 'error');
+            }
+        } catch (error) {
+            console.error('收藏操作失败:', error);
+            showAlert('操作失败', 'error');
+        }
+    }
+
+    // 访问原页面
+    function visitOriginalPage(url) {
+        if (url && url !== 'clipboard' && url !== 'vton_result' && url !== 'file_upload') {
+            // 在新标签页中打开原页面
+            window.open(url, '_blank');
+            showToast('正在打开服装原页面', 'info');
+        } else {
+            showToast('该图片没有原页面信息', 'warning');
+        }
+    }
+
+    // 显示Alert提示 - 为了兼容原有代码
+    function showAlert(message, type) {
+        showToast(message, type === 'success' ? 'success' : type === 'error' ? 'error' : 'info');
     }
 </script>
 
