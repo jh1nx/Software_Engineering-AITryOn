@@ -13,6 +13,7 @@ import threading
 import time
 import hashlib
 import secrets
+import traceback
 from functools import wraps
 
 app = Flask(__name__)
@@ -25,6 +26,9 @@ DB_PATH = "image_database.db"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 CLOUD_SERVER_URL = "http://localhost:8081/api"  # 修改为本地测试服务器
 ENABLE_CLOUD_SYNC = True  # 启用云端同步进行测试
+
+# IDM-VTON API 配置
+VTON_API_BASE_URL = "http://localhost:7860"  # Gradio服务地址
 
 # 确保保存目录存在
 BASE_SAVE_DIR.mkdir(exist_ok=True)
@@ -510,6 +514,135 @@ def check_auth():
     
     return jsonify({'authenticated': False})
 
+# 虚拟试穿相关函数
+def image_to_base64(image_path):
+    """将图片文件转换为base64字符串"""
+    try:
+        with open(image_path, 'rb') as img_file:
+            img_data = img_file.read()
+            img_base64 = base64.b64encode(img_data).decode('utf-8')
+            # 获取文件扩展名判断图片格式
+            ext = os.path.splitext(image_path)[1].lower()
+            if ext in ['.jpg', '.jpeg']:
+                mime_type = 'image/jpeg'
+            elif ext == '.png':
+                mime_type = 'image/png'
+            else:
+                mime_type = 'image/jpeg'  # 默认
+            
+            return f"data:{mime_type};base64,{img_base64}"
+    except Exception as e:
+        print(f"图片转base64失败 {image_path}: {e}")
+        return None
+
+def base64_to_image(base64_str, output_path):
+    """将base64字符串保存为图片文件"""
+    try:
+        if base64_str.startswith('data:image'):
+            base64_str = base64_str.split(',')[1]
+        
+        img_data = base64.b64decode(base64_str)
+        with open(output_path, 'wb') as f:
+            f.write(img_data)
+        return True
+    except Exception as e:
+        print(f"base64转图片失败 {output_path}: {e}")
+        return False
+
+def call_vton_api(human_image_path, garment_image_path, garment_description="a shirt", 
+                  auto_mask=True, auto_crop=False, denoise_steps=25, seed=42):
+    """使用gradio_client调用IDM-VTON虚拟试穿API"""
+    try:
+        print(f"开始虚拟试穿: 人物={human_image_path}, 服装={garment_image_path}")
+        
+        # 检查文件是否存在
+        if not os.path.exists(human_image_path):
+            return {"success": False, "error": f"人物图片不存在: {human_image_path}"}
+        
+        if not os.path.exists(garment_image_path):
+            return {"success": False, "error": f"服装图片不存在: {garment_image_path}"}
+        
+        # 转换图片为base64
+        print("🔄 转换图片为base64格式...")
+        human_base64 = image_to_base64(human_image_path)
+        if not human_base64:
+            return {"success": False, "error": "人物图片转换base64失败"}
+        
+        garment_base64 = image_to_base64(garment_image_path)
+        if not garment_base64:
+            return {"success": False, "error": "服装图片转换base64失败"}
+        
+        print(f"✅ 人物图片编码完成，长度: {len(human_base64)}")
+        print(f"✅ 服装图片编码完成，长度: {len(garment_base64)}")
+        
+        # 使用gradio_client连接服务
+        try:
+            from gradio_client import Client
+        except ImportError:
+            return {"success": False, "error": "gradio_client未安装，请运行: pip install gradio_client"}
+        
+        print(f"🔗 连接到Gradio服务: {VTON_API_BASE_URL}")
+        client = Client(VTON_API_BASE_URL)
+        
+        print("📤 发送虚拟试穿请求...")
+        start_time = time.time()
+        
+        # 调用API - 使用gradio_client的predict方法
+        result = client.predict(
+            human_image_base64=human_base64,
+            garment_image_base64=garment_base64,
+            garment_description=garment_description,
+            auto_mask=auto_mask,
+            auto_crop=auto_crop,
+            denoise_steps=denoise_steps,
+            seed=seed,
+            api_name="/tryon"
+        )
+        
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        print(f"✅ API调用成功，处理时间: {processing_time:.2f}秒")
+        
+        # 处理结果
+        if result and len(result) >= 2:
+            result_image_base64, mask_image_base64 = result
+            
+            return {
+                "success": True,
+                "result_image": result_image_base64,
+                "mask_image": mask_image_base64,
+                "processing_time": processing_time,
+                "parameters": {
+                    "garment_description": garment_description,
+                    "auto_mask": auto_mask,
+                    "auto_crop": auto_crop,
+                    "denoise_steps": denoise_steps,
+                    "seed": seed
+                }
+            }
+        else:
+            print("❌ API返回结果格式错误")
+            return {"success": False, "error": "API返回结果格式错误"}
+            
+    except ImportError:
+        return {"success": False, "error": "gradio_client未安装，请运行: pip install gradio_client"}
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ 虚拟试穿API调用失败: {error_msg}")
+        
+        # 提供更友好的错误信息
+        if "Connection" in error_msg or "connection" in error_msg:
+            return {"success": False, "error": "无法连接到虚拟试穿服务，请确保IDM-VTON Gradio服务正在运行"}
+        elif "timeout" in error_msg.lower():
+            return {"success": False, "error": "请求超时，请稍后重试"}
+        elif "list index out of range" in error_msg:
+            return {"success": False, "error": "姿态检测失败，请尝试设置 auto_mask=False 或使用更清晰的人物图片"}
+        elif "CUDA" in error_msg:
+            return {"success": False, "error": "GPU内存不足，请尝试降低 denoise_steps 或重启服务"}
+        else:
+            return {"success": False, "error": f"虚拟试穿失败: {error_msg}"}
+
 def get_user_save_dir(user_id, category='clothes'):
     """获取用户专属保存目录，支持分类"""
     user_dir = BASE_SAVE_DIR / user_id
@@ -808,6 +941,24 @@ def serve_user_image(user_id, filename):
     else:
         return "图片不存在", 404
 
+@app.route('/api/images/<filename>')
+def serve_image(filename):
+    """提供全局图片文件（已弃用，保留兼容性）"""
+    # 这个函数主要是为了兼容性，实际应该使用用户专属的图片服务
+    # 尝试在默认用户目录中查找
+    default_user_id = get_or_create_default_user()
+    
+    # 从文件名推断分类
+    category = 'clothes' if filename.startswith('clothes_') else 'char' if filename.startswith('char_') else 'clothes'
+    
+    user_save_dir = get_user_save_dir(default_user_id, category)
+    filepath = user_save_dir / filename
+    
+    if filepath.exists():
+        return send_file(filepath)
+    else:
+        return "图片不存在", 404
+
 @app.route('/api/thumbnails/<filename>')
 def serve_thumbnail(filename):
     """提供缩略图"""
@@ -837,6 +988,162 @@ def serve_user_image_by_category(user_id, category, filename):
     else:
         return "图片不存在", 404
 
+@app.route('/api/user/file-paths', methods=['GET'])
+@login_required
+def get_user_file_paths():
+    """获取用户图片文件路径信息"""
+    user_id = session['user_id']
+    category = request.args.get('category', 'all')  # 支持 'all', 'clothes', 'char'
+    
+    try:
+        # 验证分类参数
+        if category not in ['all', 'clothes', 'char']:
+            return jsonify({'success': False, 'error': '无效的分类参数'}), 400
+        
+        result = {
+            'success': True,
+            'user_id': user_id,
+            'base_path': str(BASE_SAVE_DIR.absolute()),
+            'user_path': str((BASE_SAVE_DIR / user_id).absolute()),
+            'paths': {}
+        }
+        
+        # 根据分类返回路径信息
+        if category == 'all' or category == 'clothes':
+            clothes_dir = get_user_save_dir(user_id, 'clothes')
+            result['paths']['clothes'] = {
+                'directory': str(clothes_dir.absolute()),
+                'exists': clothes_dir.exists(),
+                'files': []
+            }
+            
+            if clothes_dir.exists():
+                # 获取clothes目录下的所有图片文件
+                for file_path in clothes_dir.glob('clothes_*'):
+                    if file_path.is_file() and file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
+                        result['paths']['clothes']['files'].append({
+                            'filename': file_path.name,
+                            'full_path': str(file_path.absolute()),
+                            'relative_path': str(file_path.relative_to(BASE_SAVE_DIR)),
+                            'size': file_path.stat().st_size,
+                            'modified': datetime.datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
+                        })
+        
+        if category == 'all' or category == 'char':
+            char_dir = get_user_save_dir(user_id, 'char')
+            result['paths']['char'] = {
+                'directory': str(char_dir.absolute()),
+                'exists': char_dir.exists(),
+                'files': []
+            }
+            
+            if char_dir.exists():
+                # 获取char目录下的所有图片文件
+                for file_path in char_dir.glob('char_*'):
+                    if file_path.is_file() and file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
+                        result['paths']['char']['files'].append({
+                            'filename': file_path.name,
+                            'full_path': str(file_path.absolute()),
+                            'relative_path': str(file_path.relative_to(BASE_SAVE_DIR)),
+                            'size': file_path.stat().st_size,
+                            'modified': datetime.datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
+                        })
+        
+        # 添加统计信息
+        total_files = sum(len(paths.get('files', [])) for paths in result['paths'].values())
+        total_size = sum(
+            sum(file_info['size'] for file_info in paths.get('files', []))
+            for paths in result['paths'].values()
+        )
+        
+        result['statistics'] = {
+            'total_files': total_files,
+            'total_size': total_size,
+            'total_size_mb': round(total_size / 1024 / 1024, 2)
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"获取文件路径失败: {e}")
+        return jsonify({'success': False, 'error': f'获取文件路径失败: {str(e)}'}), 500
+
+@app.route('/api/user/<user_id>/file-paths', methods=['GET'])
+def get_user_file_paths_by_id(user_id):
+    """根据用户ID获取图片文件路径信息（支持默认用户）"""
+    # 如果是登录用户，验证权限
+    if 'user_id' in session and session['user_id'] != user_id:
+        return jsonify({'error': '权限不足'}), 403
+    
+    category = request.args.get('category', 'all')
+    include_files = request.args.get('include_files', 'true').lower() == 'true'
+    
+    try:
+        # 验证分类参数
+        if category not in ['all', 'clothes', 'char']:
+            return jsonify({'success': False, 'error': '无效的分类参数'}), 400
+        
+        # 检查用户目录是否存在
+        user_dir = BASE_SAVE_DIR / user_id
+        if not user_dir.exists():
+            return jsonify({'success': False, 'error': '用户目录不存在'}), 404
+        
+        result = {
+            'success': True,
+            'user_id': user_id,
+            'base_path': str(BASE_SAVE_DIR.absolute()),
+            'user_path': str(user_dir.absolute()),
+            'paths': {}
+        }
+        
+        # 根据分类返回路径信息
+        categories_to_check = []
+        if category == 'all':
+            categories_to_check = ['clothes', 'char']
+        else:
+            categories_to_check = [category]
+        
+        for cat in categories_to_check:
+            cat_dir = get_user_save_dir(user_id, cat)
+            result['paths'][cat] = {
+                'directory': str(cat_dir.absolute()),
+                'exists': cat_dir.exists(),
+                'files': []
+            }
+            
+            if include_files and cat_dir.exists():
+                # 获取目录下的所有图片文件
+                pattern = f'{cat}_*' if cat in ['clothes', 'char'] else '*'
+                for file_path in cat_dir.glob(pattern):
+                    if file_path.is_file() and file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
+                        result['paths'][cat]['files'].append({
+                            'filename': file_path.name,
+                            'full_path': str(file_path.absolute()),
+                            'relative_path': str(file_path.relative_to(BASE_SAVE_DIR)),
+                            'size': file_path.stat().st_size,
+                            'modified': datetime.datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
+                        })
+        
+        # 添加统计信息
+        if include_files:
+            total_files = sum(len(paths.get('files', [])) for paths in result['paths'].values())
+            total_size = sum(
+                sum(file_info['size'] for file_info in paths.get('files', []))
+                for paths in result['paths'].values()
+            )
+            
+            result['statistics'] = {
+                'total_files': total_files,
+                'total_size': total_size,
+                'total_size_mb': round(total_size / 1024 / 1024, 2)
+            }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"获取用户文件路径失败: {e}")
+        return jsonify({'success': False, 'error': f'获取文件路径失败: {str(e)}'}), 500
+
 # Web界面路由
 @app.route('/')
 def index():
@@ -847,6 +1154,11 @@ def index():
 def images_page():
     """图片展示页面"""
     return render_template('images.html')
+
+@app.route('/tryon')
+def tryon_page():
+    """虚拟试穿页面"""
+    return render_template('tryon.html')
 
 # 用户认证API
 @app.route('/api/register', methods=['POST'])
@@ -869,9 +1181,7 @@ def register():
         # 尝试云端注册（仅在启用时），传递本地用户ID
         if ENABLE_CLOUD_SYNC:
             def cloud_register():
-                cloud_result = cloud_client.register_user(username, email, password, user_id)
-                if cloud_result:
-                    print(f"用户 {username} 已同步到云端")
+                cloud_client.register_user(username, email, password, user_id)
             
             threading.Thread(target=cloud_register).start()
         
@@ -1231,143 +1541,364 @@ def upload_file():
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
 
-if __name__ == '__main__':
-    print("启动图片处理服务器...")
-    print(f"保存目录: {BASE_SAVE_DIR.absolute()}")
-    print(f"数据库: {DB_PATH}")
-    print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
-    print("WebUI地址: http://localhost:8080")
-    app.run(host='localhost', port=8080, debug=True)
-    print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
-    print("WebUI地址: http://localhost:8080")
-    app.run(host='localhost', port=8080, debug=True)
-def upload_file():
-    """文件上传接口"""
+@app.route('/api/user/current/images/<category>/<filename>')
+def serve_current_user_image(category, filename):
+    """为当前用户提供图片（适用于已登录和未登录用户）"""
     try:
-        print("收到文件上传请求")
-        
-        # 检查用户是否登录，如果没有登录则使用默认用户
-        user_id = session.get('user_id')
-        if not user_id:
+        # 获取当前用户ID
+        if 'user_id' in session:
+            user_id = session['user_id']
+        else:
             user_id = get_or_create_default_user()
-            print(f"未登录用户，使用默认用户ID: {user_id}")
-        else:
-            print(f"登录用户ID: {user_id}")
         
-        # 检查是否有文件上传
-        if 'file' not in request.files:
-            print("错误: 没有选择文件")
-            return jsonify({'success': False, 'error': '没有选择文件'}), 400
+        return serve_user_image_by_category(user_id, category, filename)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# 虚拟试穿API
+@app.route('/api/vton/check', methods=['GET'])
+def check_vton_service():
+    """使用gradio_client检查虚拟试穿服务状态"""
+    try:
+        # 尝试导入gradio_client
+        try:
+            from gradio_client import Client
+        except ImportError:
+            return jsonify({
+                'success': False,
+                'status': 'dependency_missing',
+                'error': 'gradio_client未安装，请运行: pip install gradio_client'
+            }), 503
         
-        file = request.files['file']
-        category = request.form.get('category', 'clothes')
+        print(f"🔗 检查Gradio服务: {VTON_API_BASE_URL}")
         
-        print(f"接收到文件: {file.filename}, 分类: {category}")
+        # 尝试连接到Gradio服务
+        client = Client(VTON_API_BASE_URL)
         
-        if file.filename == '':
-            print("错误: 文件名为空")
-            return jsonify({'success': False, 'error': '没有选择文件'}), 400
-        
-        # 验证文件类型
-        allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
-        if not file.filename.lower().endswith(allowed_extensions):
-            print(f"错误: 不支持的文件格式: {file.filename}")
-            return jsonify({'success': False, 'error': '不支持的文件格式，请上传 PNG、JPG、JPEG、GIF 或 WebP 格式的图片'}), 400
-        
-        # 验证分类参数
-        if category not in ['clothes', 'char']:
-            category = 'clothes'
-            print(f"无效分类，使用默认分类: {category}")
-        
-        # 检查文件大小 (10MB限制)
-        file.seek(0, 2)  # 移动到文件末尾
-        file_size = file.tell()
-        file.seek(0)  # 重置文件指针
-        
-        if file_size > 10 * 1024 * 1024:  # 10MB
-            print(f"错误: 文件过大 ({file_size} bytes)")
-            return jsonify({'success': False, 'error': '文件大小不能超过10MB'}), 400
-        
-        # 读取文件内容并转换为base64
-        file_content = file.read()
-        file_ext = file.filename.lower().split('.')[-1]
-        
-        # 确定MIME类型
-        mime_types = {
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'gif': 'image/gif',
-            'webp': 'image/webp'
-        }
-        mime_type = mime_types.get(file_ext, 'image/jpeg')
-        
-        # 转换为base64格式
-        image_data = f"data:{mime_type};base64," + base64.b64encode(file_content).decode('utf-8')
-        
-        print(f"文件转换完成, MIME类型: {mime_type}, 数据长度: {len(image_data)}")
-        
-        # 构造页面信息
-        page_info = {
-            'url': 'file_upload',
-            'title': f'上传文件 - {file.filename}',
-            'source': 'file_upload',
-            'original_filename': file.filename
-        }
-        
-        print(f"开始保存文件到分类: {category}")
-        
-        # 保存图片
-        result = save_image_from_data(image_data, f'file_upload:{file.filename}', page_info, user_id, category)
-        
-        if result:
-            print(f"文件保存成功: {result['filename']}")
+        # 检查API是否可用 - 可以尝试获取API信息
+        try:
+            # 获取API信息来验证服务是否正常
+            api_info = client.view_api()
+            print(f"✅ Gradio服务连接成功")
             
-            # 创建任务
-            task_id = str(uuid.uuid4())
-            db.create_task(task_id, user_id, result['image_id'])
-            print(f"任务创建成功: {task_id}")
+            # 检查是否有/tryon端点
+            has_tryon_api = any('/tryon' in str(endpoint) for endpoint in api_info.get('named_endpoints', {}))
             
-            # 模拟异步处理
-            def process_task():
-                try:
-                    time.sleep(1)  # 模拟处理时间
-                    db.update_task_status(task_id, 'completed')
-                    print(f"任务完成: {task_id}")
-                except Exception as e:
-                    print(f"任务处理失败: {e}")
-            
-            thread = threading.Thread(target=process_task)
-            thread.start()
-            
-            response_data = {
+            return jsonify({
                 'success': True,
-                'taskId': task_id,
-                'imageId': result['image_id'],
-                'filename': result['filename'],
-                'fileSize': result['file_size'],
-                'category': result['category'],
-                'originalFilename': file.filename,
-                'isLoggedIn': 'user_id' in session,
-                'message': f'文件已上传到 {category} 文件夹'
-            }
+                'status': 'available',
+                'service_url': VTON_API_BASE_URL,
+                'message': '虚拟试穿服务可用',
+                'has_tryon_api': has_tryon_api,
+                'api_info': {
+                    'endpoints': list(api_info.get('named_endpoints', {}).keys()) if api_info else []
+                }
+            })
             
-            print(f"返回成功响应: {response_data}")
-            return jsonify(response_data)
-        else:
-            print("错误: 保存上传文件失败")
-            return jsonify({'success': False, 'error': '保存上传文件失败'}), 500
+        except Exception as api_error:
+            print(f"⚠️ API检查失败: {api_error}")
+            # 即使API检查失败，如果能连接到客户端，说明服务在运行
+            return jsonify({
+                'success': True,
+                'status': 'available_limited',
+                'service_url': VTON_API_BASE_URL,
+                'message': '虚拟试穿服务运行中（API检查部分失败）',
+                'warning': str(api_error)
+            })
             
     except Exception as e:
-        print(f"处理文件上传失败: {e}")
+        error_msg = str(e)
+        print(f"❌ 服务检查失败: {error_msg}")
+        
+        # 提供更详细的错误信息
+        if "Connection" in error_msg or "connection" in error_msg:
+            return jsonify({
+                'success': False,
+                'status': 'unavailable',
+                'error': f'无法连接到虚拟试穿服务 ({VTON_API_BASE_URL})，请确保IDM-VTON Gradio服务正在运行'
+            }), 503
+        else:
+            return jsonify({
+                'success': False,
+                'status': 'error',
+                'error': f'服务检查失败: {error_msg}'
+            }), 500
+
+@app.route('/api/vton/tryon', methods=['POST'])
+def virtual_tryon():
+    """虚拟试穿API"""
+    try:
+        print("收到虚拟试穿请求")
+        
+        # 获取当前用户ID
+        if 'user_id' in session:
+            user_id = session['user_id']
+        else:
+            user_id = get_or_create_default_user()
+        
+        print(f"用户ID: {user_id}")
+        
+        # 获取请求数据
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '请求数据为空'}), 400
+        
+        # 验证必需参数
+        human_filename = data.get('human_image')
+        garment_filename = data.get('garment_image')
+        
+        if not human_filename or not garment_filename:
+            return jsonify({'success': False, 'error': '人物图片和服装图片都是必需的'}), 400
+        
+        # 构建图片文件路径
+        user_dir = BASE_SAVE_DIR / user_id
+        
+        # 查找人物图片（可能在char目录下）
+        human_path = None
+        for category in ['char', 'clothes']:
+            potential_path = user_dir / category / human_filename
+            if potential_path.exists():
+                human_path = potential_path
+                break
+        
+        if not human_path:
+            return jsonify({'success': False, 'error': f'人物图片不存在: {human_filename}'}), 404
+        
+        # 查找服装图片（通常在clothes目录下）
+        garment_path = None
+        for category in ['clothes', 'char']:
+            potential_path = user_dir / category / garment_filename
+            if potential_path.exists():
+                garment_path = potential_path
+                break
+        
+        if not garment_path:
+            return jsonify({'success': False, 'error': f'服装图片不存在: {garment_filename}'}), 404
+        
+        # 获取试穿参数
+        garment_description = data.get('garment_description', 'a shirt')
+        auto_mask = data.get('auto_mask', True)
+        auto_crop = data.get('auto_crop', False)
+        denoise_steps = data.get('denoise_steps', 25)
+        seed = data.get('seed', int(time.time()) % 10000)  # 使用时间戳作为随机种子
+        
+        # 验证参数范围
+        if not (1 <= denoise_steps <= 50):
+            denoise_steps = 25
+        
+        print(f"试穿参数: 描述={garment_description}, 遮罩={auto_mask}, 裁剪={auto_crop}, 步骤={denoise_steps}, 种子={seed}")
+        
+        # 调用虚拟试穿API
+        vton_result = call_vton_api(
+            str(human_path), 
+            str(garment_path),
+            garment_description=garment_description,
+            auto_mask=auto_mask,
+            auto_crop=auto_crop,
+            denoise_steps=denoise_steps,
+            seed=seed
+        )
+        
+        if not vton_result['success']:
+            return jsonify({
+                'success': False,
+                'error': vton_result['error']
+            }), 500
+        
+        # 保存试穿结果
+        result_filename = f"vton_result_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{seed}.png"
+        mask_filename = f"vton_mask_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{seed}.png"
+        
+        # 创建试穿结果目录
+        vton_results_dir = user_dir / "vton_results"
+        vton_results_dir.mkdir(exist_ok=True)
+        
+        result_path = vton_results_dir / result_filename
+        mask_path = vton_results_dir / mask_filename
+        
+        # 保存试穿结果图片
+        if base64_to_image(vton_result['result_image'], result_path):
+            print(f"试穿结果已保存: {result_path}")
+        else:
+            print(f"保存试穿结果失败: {result_path}")
+        
+        # 保存遮罩图片
+        if base64_to_image(vton_result['mask_image'], mask_path):
+            print(f"遮罩图片已保存: {mask_path}")
+        else:
+            print(f"保存遮罩图片失败: {mask_path}")
+        
+        # 记录试穿历史到数据库（可选）
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # 创建试穿历史表（如果不存在）
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vton_history (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    human_image TEXT NOT NULL,
+                    garment_image TEXT NOT NULL,
+                    result_image TEXT NOT NULL,
+                    mask_image TEXT,
+                    parameters TEXT,
+                    processing_time REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            ''')
+            
+            # 插入试穿记录
+            vton_id = str(uuid.uuid4())
+            cursor.execute('''
+                INSERT INTO vton_history 
+                (id, user_id, human_image, garment_image, result_image, mask_image, parameters, processing_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                vton_id, user_id, human_filename, garment_filename,
+                result_filename, mask_filename,
+                json.dumps(vton_result['parameters']),
+                vton_result['processing_time']
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"保存试穿历史失败: {e}")
+        
+        # 返回成功结果
+        return jsonify({
+            'success': True,
+            'message': '虚拟试穿完成',
+            'result': {
+                'vton_id': vton_id,
+                'result_image': vton_result['result_image'],  # base64格式，前端可直接显示
+                'mask_image': vton_result['mask_image'],
+                'result_filename': result_filename,
+                'mask_filename': mask_filename,
+                'result_url': url_for('serve_vton_result', user_id=user_id, filename=result_filename),
+                'mask_url': url_for('serve_vton_result', user_id=user_id, filename=mask_filename),
+                'processing_time': vton_result['processing_time'],
+                'parameters': vton_result['parameters'],
+                'human_image': human_filename,
+                'garment_image': garment_filename
+            }
+        })
+        
+    except Exception as e:
+        print(f"虚拟试穿失败: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': f'服务器错误: {str(e)}'}), 500
+        return jsonify({
+            'success': False,
+            'error': f'虚拟试穿失败: {str(e)}'
+        }), 500
+
+@app.route('/api/vton/history', methods=['GET'])
+def get_vton_history():
+    """获取虚拟试穿历史"""
+    try:
+        # 获取当前用户ID
+        if 'user_id' in session:
+            user_id = session['user_id']
+        else:
+            user_id = get_or_create_default_user()
+        
+        # 获取分页参数
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 10, type=int), 50)
+        offset = (page - 1) * per_page
+        
+        # 查询试穿历史
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 检查表是否存在
+        cursor.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='vton_history'
+        ''')
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({
+                'success': True,
+                'history': [],
+                'total': 0,
+                'page': page,
+                'per_page': per_page
+            })
+        
+        # 获取总数
+        cursor.execute('SELECT COUNT(*) FROM vton_history WHERE user_id = ?', (user_id,))
+        total = cursor.fetchone()[0]
+        
+        # 获取历史记录
+        cursor.execute('''
+            SELECT id, human_image, garment_image, result_image, mask_image, 
+                   parameters, processing_time, created_at
+            FROM vton_history 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ? OFFSET ?
+        ''', (user_id, per_page, offset))
+        
+        records = cursor.fetchall()
+        conn.close()
+        
+        history = []
+        for record in records:
+            try:
+                parameters = json.loads(record[5]) if record[5] else {}
+            except:
+                parameters = {}
+            
+            history.append({
+                'id': record[0],
+                'human_image': record[1],
+                'garment_image': record[2],
+                'result_image': record[3],
+                'mask_image': record[4],
+                'result_url': url_for('serve_vton_result', user_id=user_id, filename=record[3]),
+                'mask_url': url_for('serve_vton_result', user_id=user_id, filename=record[4]) if record[4] else None,
+                'parameters': parameters,
+                'processing_time': record[6],
+                'created_at': record[7]
+            })
+        
+        return jsonify({
+            'success': True,
+            'history': history,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'has_next': offset + per_page < total,
+            'has_prev': page > 1
+        })
+        
+    except Exception as e:
+        print(f"获取试穿历史失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/user/<user_id>/vton_results/<filename>')
+def serve_vton_result(user_id, filename):
+    """提供虚拟试穿结果图片"""
+    try:
+        vton_results_dir = BASE_SAVE_DIR / user_id / "vton_results"
+        file_path = vton_results_dir / filename
+        
+        if file_path.exists():
+            return send_file(file_path)
+        else:
+            return jsonify({'error': '文件不存在'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("启动图片处理服务器...")
     print(f"保存目录: {BASE_SAVE_DIR.absolute()}")
     print(f"数据库: {DB_PATH}")
     print(f"云端同步: {'启用' if ENABLE_CLOUD_SYNC else '禁用'}")
-    print("WebUI地址: http://localhost:8080")
-    app.run(host='localhost', port=8080, debug=True)
+    print("WebUI地址: http://localhost:5000")
+    app.run(host='localhost', port=5000, debug=True)

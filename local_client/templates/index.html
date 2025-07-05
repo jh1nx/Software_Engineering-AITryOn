@@ -148,6 +148,54 @@
         </div>
     </div>
 </div>
+
+<!-- 虚拟试穿功能介绍 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-gradient text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+            <div class="card-body p-4">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h3><i class="bi bi-magic"></i> AI虚拟试穿</h3>
+                        <p class="mb-3">
+                            使用最先进的IDM-VTON技术，将您上传的服装图片"穿"到人物图片上，生成逼真的试穿效果。
+                            支持多种服装类型，包括上衣、连衣裙、外套等。
+                        </p>
+                        <ul class="list-inline mb-0">
+                            <li class="list-inline-item"><i class="bi bi-check-circle"></i> 高质量试穿效果</li>
+                            <li class="list-inline-item"><i class="bi bi-check-circle"></i> 多种参数调节</li>
+                            <li class="list-inline-item"><i class="bi bi-check-circle"></i> 快速处理</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <a href="{{ url_for('tryon_page') }}" class="btn btn-light btn-lg">
+                            <i class="bi bi-magic"></i> 开始试穿
+                        </a>
+                        <p class="mt-2 mb-0"><small>需要先上传人物和服装图片</small></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <h2><i class="bi bi-clock-history"></i> 最近保存的图片</h2>
+        <div id="recentImages" class="row">
+            <div class="col-12 text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-center mt-3" id="viewAllButton" style="display: none;">
+            <a href="{{ url_for('images_page') }}" class="btn btn-primary">
+                <i class="bi bi-images"></i> 查看所有图片
+            </a>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

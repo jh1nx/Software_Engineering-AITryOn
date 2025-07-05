@@ -94,8 +94,16 @@ Content-Type: application/json
 ```
 
 **说明**：
-- 注册成功后，如果启用云端同步，系统会自动尝试在云端注册用户
-- 云端注册失败不影响本地注册结果
+- 注册成功后会生成本地用户ID，并创建用户专属的分类目录结构
+- 如果启用云端同步，系统会自动将本地用户ID传递给云端进行注册
+- **重要**: 云端用户ID与本地用户ID保持一致，便于同步时直接使用相同的图片路径
+- 云端注册过程：
+  1. 本地注册成功后获得 `user_id`
+  2. 异步调用云端注册接口 `/api/register`，传递参数包括 `local_user_id`
+  3. 云端接收到 `local_user_id` 后直接将其作为云端用户ID使用
+  4. 云端创建与本地相同的目录结构：`cloud_data/users/{user_id}/{clothes,char}/`
+- 云端注册失败不影响本地注册结果，用户仍可正常使用本地功能
+- 用户目录结构：`saved_images/{user_id}/{clothes,char}/`
 
 ### 3. 用户登录
 用户登录系统。
@@ -555,48 +563,11 @@ Host: localhost:8080
 - 将数据和文件上传到云端服务器
 - 更新本地同步状态标记
 
-**同步数据结构**：
-```json
-{
-  "user_info": {
-    "user_id": "string",
-    "username": "string", 
-    "email": "string",
-    "created_at": "datetime",
-    "last_login": "datetime",
-    "cloud_sync_enabled": "boolean"
-  },
-  "images_metadata": [
-    {
-      "id": "string",
-      "user_id": "string",
-      "filename": "string",
-      "original_url": "string",
-      "page_url": "string",
-      "page_title": "string",
-      "saved_at": "datetime",
-      "file_size": "integer",
-      "image_width": "integer",
-      "image_height": "integer",
-      "context_info": "object",
-      "status": "string",
-      "cloud_synced": "boolean"
-    }
-  ],
-  "image_files": {
-    "filename1.png": "data:image/png;base64,iVBORw0KGgoAAAA...",
-    "filename2.jpg": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
-  },
-  "sync_timestamp": "datetime",
-  "sync_statistics": {
-    "total_metadata_records": "integer",
-    "total_files_found": "integer", 
-    "total_files_missing": "integer",
-    "total_size": "integer",
-    "categories": ["clothes", "char"]
-  }
-}
-```
+**同步优势**：
+- **路径一致性**: 由于云端用户ID与本地用户ID相同，图片在云端的存储路径与本地完全一致
+- **简化映射**: 无需维护复杂的用户ID映射关系
+- **直接访问**: 同步后可通过相同的路径直接访问云端文件
+- **备份恢复**: 本地数据丢失时可直接从云端按原路径恢复
 
 **请求示例**：
 ```http
@@ -646,6 +617,100 @@ Content-Type: application/json
 - 批量上传，减少网络请求次数
 - 断点续传（计划功能）
 - 增量同步（计划功能）
+
+### 16. 获取用户文件路径信息
+获取当前登录用户的图片文件路径信息。
+
+**接口地址**：`GET /api/user/file-paths`
+
+**认证要求**：需要登录
+
+**请求参数**：
+- `category`: 分类过滤，可选值 "all"、"clothes"、"char"，默认 "all"
+
+**请求示例**：
+```http
+GET /api/user/file-paths?category=clothes HTTP/1.1
+Host: localhost:8080
+Cookie: session=...
+```
+
+**响应示例**：
+```json
+{
+  "success": true,
+  "user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "base_path": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images",
+  "user_path": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "paths": {
+    "clothes": {
+      "directory": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes",
+      "exists": true,
+      "files": [
+        {
+          "filename": "clothes_20250625_143000_12345678.png",
+          "full_path": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes\\clothes_20250625_143000_12345678.png",
+          "relative_path": "f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes\\clothes_20250625_143000_12345678.png",
+          "size": 245760,
+          "modified": "2025-06-25T14:30:00.123456"
+        }
+      ]
+    }
+  },
+  "statistics": {
+    "total_files": 1,
+    "total_size": 245760,
+    "total_size_mb": 0.23
+  }
+}
+```
+
+### 17. 根据用户ID获取文件路径信息
+根据指定用户ID获取图片文件路径信息（支持默认用户）。
+
+**接口地址**：`GET /api/user/{user_id}/file-paths`
+
+**认证要求**：需要登录（只能访问自己的数据）
+
+**请求参数**：
+- `category`: 分类过滤，可选值 "all"、"clothes"、"char"，默认 "all"
+- `include_files`: 是否包含文件列表，默认 "true"
+
+**请求示例**：
+```http
+GET /api/user/f47ac10b-58cc-4372-a567-0e02b2c3d479/file-paths?category=all&include_files=false HTTP/1.1
+Host: localhost:8080
+Cookie: session=...
+```
+
+**响应示例（不包含文件列表）**：
+```json
+{
+  "success": true,
+  "user_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "base_path": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images",
+  "user_path": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "paths": {
+    "clothes": {
+      "directory": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\clothes",
+      "exists": true,
+      "files": []
+    },
+    "char": {
+      "directory": "D:\\WorkSpace\\code\\my_idm_vton\\local_client\\saved_images\\f47ac10b-58cc-4372-a567-0e02b2c3d479\\char",
+      "exists": true,
+      "files": []
+    }
+  }
+}
+```
+
+**用途说明**：
+- 获取用户图片存储的完整路径信息
+- 支持按分类查询（clothes/char）
+- 可选择是否包含详细的文件列表
+- 便于外部程序直接访问用户图片文件
+- 支持统计文件数量和总大小
 
 ---
 
@@ -910,17 +975,18 @@ saved_images/
 1. **会话管理**: 使用Cookie进行会话管理，登录后需要在后续请求中携带Cookie
 2. **权限控制**: 用户只能访问自己的图片和数据
 3. **文件存储**: 每个用户的图片存储在独立的目录中，按分类组织
-4. **数据库迁移**: 系统会自动检测并迁移旧版本的数据库结构
-5. **云端同步**: 需要云端服务器配合，支持异步处理
-6. **图片格式**: 支持PNG、JPG、JPEG、GIF、WEBP格式
-7. **文件大小**: 单个文件最大10MB
-8. **分类验证**: 系统会验证分类参数，无效分类自动降级为 `clothes`
-9. **剪切板权限**: 剪切板功能需要用户授权，某些浏览器可能有限制
-10. **批量上传**: 建议单次上传文件数量不超过 20 个
-11. **目录自动创建**: 系统会自动创建所需的分类目录
-12. **默认用户**: 未登录用户的图片保存到默认用户目录，建议登录管理
-13. **同步超时**: 云端同步超时时间为5分钟
-14. **网络要求**: 云端同步需要稳定的网络连接
+4. **用户ID一致性**: 本地用户ID与云端用户ID保持一致，确保同步路径的一致性
+5. **数据库迁移**: 系统会自动检测并迁移旧版本的数据库结构
+6. **云端同步**: 需要云端服务器配合，支持异步处理
+7. **图片格式**: 支持PNG、JPG、JPEG、GIF、WEBP格式
+8. **文件大小**: 单个文件最大10MB
+9. **分类验证**: 系统会验证分类参数，无效分类自动降级为 `clothes`
+10. **剪切板权限**: 剪切板功能需要用户授权，某些浏览器可能有限制
+11. **批量上传**: 建议单次上传文件数量不超过 20 个
+12. **目录自动创建**: 系统会自动创建所需的分类目录
+13. **默认用户**: 未登录用户的图片保存到默认用户目录，建议登录管理
+14. **同步超时**: 云端同步超时时间为5分钟
+15. **网络要求**: 云端同步需要稳定的网络连接
 
 ---
 
