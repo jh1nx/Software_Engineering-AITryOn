@@ -489,6 +489,103 @@ class ImageDatabase:
             return None
         finally:
             conn.close()
+    
+    def get_image_by_id(self, image_id, user_id=None):
+        """根据图片ID获取图片信息"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            if user_id:
+                cursor.execute('SELECT * FROM images WHERE id = ? AND user_id = ?', (image_id, user_id))
+            else:
+                cursor.execute('SELECT * FROM images WHERE id = ?', (image_id,))
+            
+            result = cursor.fetchone()
+            if result:
+                return {
+                    'id': result[0],
+                    'user_id': result[1],
+                    'filename': result[2],
+                    'original_url': result[3],
+                    'page_url': result[4],
+                    'page_title': result[5],
+                    'saved_at': result[6],
+                    'file_size': result[7],
+                    'image_width': result[8],
+                    'image_height': result[9],
+                    'context_info': json.loads(result[10]) if result[10] else {},
+                    'status': result[11],
+                    'cloud_synced': bool(result[12]) if len(result) > 12 else False,
+                    'category': result[13] if len(result) > 13 else 'clothes'
+                }
+            return None
+        finally:
+            conn.close()
+    
+    def delete_image(self, image_id, user_id):
+        """删除图片记录和文件"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # 先获取图片信息
+            image = self.get_image_by_id(image_id, user_id)
+            if not image:
+                return False, "图片不存在或无权限删除"
+            
+            # 删除文件
+            try:
+                category = image.get('category', 'clothes')
+                user_save_dir = get_user_save_dir(user_id, category)
+                filepath = user_save_dir / image['filename']
+                if filepath.exists():
+                    filepath.unlink()
+                    print(f"已删除文件: {filepath}")
+            except Exception as e:
+                print(f"删除文件失败: {e}")
+                # 即使文件删除失败，也继续删除数据库记录
+            
+            # 删除数据库记录
+            cursor.execute('DELETE FROM images WHERE id = ? AND user_id = ?', (image_id, user_id))
+            
+            # 删除相关的收藏记录
+            cursor.execute('DELETE FROM favorites WHERE image_id = ?', (image_id,))
+            
+            # 删除相关的VTON历史记录
+            cursor.execute('DELETE FROM vton_history WHERE result_image_id = ?', (image_id,))
+            
+            conn.commit()
+            return True, "删除成功"
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"删除图片失败: {e}")
+            return False, f"删除失败: {str(e)}"
+        finally:
+            conn.close()
+    
+    def delete_multiple_images(self, image_ids, user_id):
+        """批量删除图片"""
+        if not image_ids:
+            return False, "未选择图片"
+        
+        success_count = 0
+        failed_count = 0
+        errors = []
+        
+        for image_id in image_ids:
+            success, message = self.delete_image(image_id, user_id)
+            if success:
+                success_count += 1
+            else:
+                failed_count += 1
+                errors.append(f"ID {image_id}: {message}")
+        
+        if failed_count == 0:
+            return True, f"成功删除 {success_count} 张图片"
+        elif success_count == 0:
+            return False, f"删除失败: {'; '.join(errors)}"
+        else:
+            return True, f"成功删除 {success_count} 张图片，失败 {failed_count} 张"
 
 # 初始化数据库
 db = ImageDatabase(DB_PATH)
@@ -1888,7 +1985,7 @@ def check_vton_service():
         if "Connection" in error_msg or "connection" in error_msg:
             return jsonify({
                 'success': False,
-                'status': 'unavailable',
+ 'status': 'unavailable',
                 'error': f'无法连接到虚拟试穿服务 ({VTON_API_BASE_URL})，请确保IDM-VTON Gradio服务正在运行'
             }), 503
         else:
@@ -1936,7 +2033,7 @@ def virtual_tryon():
                 break
         
         if not human_path:
-            return jsonify({'success': False, 'error': f'人物图片不存在: {human_filename}'}), 404
+            return jsonify({'success': False, 'error': f'人物图片不存在: {human_filename}'}, 404)
         
         # 查找服装图片（通常在clothes目录下）
         garment_path = None
@@ -1947,7 +2044,7 @@ def virtual_tryon():
                 break
         
         if not garment_path:
-            return jsonify({'success': False, 'error': f'服装图片不存在: {garment_filename}'}), 404
+            return jsonify({'success': False, 'error': f'服装图片不存在: {garment_filename}'}, 404)
         
         # 获取试穿参数
         garment_description = data.get('garment_description', 'a shirt')
@@ -2006,7 +2103,7 @@ def virtual_tryon():
                 if garment_image_info and garment_image_info.get('page_url') and garment_image_info['page_url'].strip() and garment_image_info.get('original_url') not in ['clipboard', 'vton_result', 'file_upload']:
                     # 如果服装图片有原始页面信息，使用它
                     page_info = {
-                        'url': garment_image_info['page_url'],  # 使用页面URL而不是图片URL
+                        'url': garment_image_info['page_url'],
                         'title': garment_image_info.get('page_title', f'虚拟试穿结果 - {garment_filename}'),
                         'source': 'vton_result_from_garment',
                         'original_garment_url': garment_image_info['original_url'],
@@ -2358,4 +2455,67 @@ def get_category_stats():
         })
         
     except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# 图片删除功能API
+@app.route('/api/images/<image_id>', methods=['DELETE'])
+@login_required
+def delete_image(image_id):
+    """删除单张图片"""
+    try:
+        user_id = session['user_id']
+        success, message = db.delete_image(image_id, user_id)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+            
+    except Exception as e:
+        print(f"删除图片API失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/batch-delete', methods=['POST'])
+@login_required
+def batch_delete_images():
+    """批量删除图片"""
+    try:
+        user_id = session['user_id']
+        data = request.get_json()
+        
+        image_ids = data.get('image_ids', [])
+        if not image_ids:
+            return jsonify({'success': False, 'error': '未选择图片'}), 400
+        
+        success, message = db.delete_multiple_images(image_ids, user_id)
+        
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+            
+    except Exception as e:
+        print(f"批量删除图片API失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/images/<image_id>', methods=['GET'])
+@login_required
+def get_image_details(image_id):
+    """获取图片详细信息"""
+    try:
+        user_id = session['user_id']
+        image = db.get_image_by_id(image_id, user_id)
+        
+        if image:
+            # 添加预览URL
+            category = image.get('category', 'clothes')
+            image['preview_url'] = f"/api/user/{user_id}/images/{category}/{image['filename']}"
+            image['thumbnail_url'] = f"/api/user/{user_id}/thumbnails/{image['filename']}"
+            
+            return jsonify({'success': True, 'image': image})
+        else:
+            return jsonify({'success': False, 'error': '图片不存在'}), 404
+            
+    except Exception as e:
+        print(f"获取图片详情API失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

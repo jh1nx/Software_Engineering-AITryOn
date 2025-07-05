@@ -3,240 +3,244 @@
 {% block title %}虚拟试穿 - IDM-VTON{% endblock %}
 
 {% block content %}
-<div class="row">
+<div class="row" style="margin-top: 60px;">
     <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1><i class="bi bi-magic"></i> 虚拟试穿</h1>
-            <div>
-                <button class="btn btn-outline-secondary" onclick="checkVtonService()">
-                    <i class="bi bi-server"></i> 检查服务状态
-                </button>
-                <button class="btn btn-outline-info" onclick="showVtonHistory()">
-                    <i class="bi bi-clock-history"></i> 试穿历史
-                </button>
+        <div class="card-genshin mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="hero-title" style="font-size:2.5rem;"><i class="bi bi-magic"></i> 虚拟试穿</h1>
+                <div>
+                    <button class="btn btn-outline-genshin" onclick="checkVtonService()">
+                        <i class="bi bi-server"></i> 检查服务状态
+                    </button>
+                    <button class="btn btn-outline-genshin" onclick="showVtonHistory()">
+                        <i class="bi bi-clock-history"></i> 试穿历史
+                    </button>
+                </div>
             </div>
-        </div>
 
-        <!-- 服务状态提示 -->
-        <div id="serviceStatus" class="alert alert-info d-none">
-            <i class="bi bi-info-circle"></i> 正在检查虚拟试穿服务状态...
-        </div>
+            <!-- 服务状态提示 -->
+            <div id="serviceStatus" class="alert alert-info d-none">
+                <i class="bi bi-info-circle"></i> 正在检查虚拟试穿服务状态...
+            </div>
 
-        <!-- 试穿界面 -->
-        <div class="card">
-            <div class="card-body">
-                <div class="row">
-                    <!-- 左侧：图片选择 -->
-                    <div class="col-md-8">
-                        <div class="row">
-                            <!-- 人物图片选择 -->
-                            <div class="col-md-6">
-                                <h5><i class="bi bi-person"></i> 选择人物图片</h5>
-                                <div class="mb-3">
-                                    <div class="category-tabs">
-                                        <button class="btn btn-outline-primary active" onclick="loadUserImages('char', 'human')" data-category="char">
-                                            <i class="bi bi-person"></i> 角色图片
-                                        </button>
-                                        <button class="btn btn-outline-primary" onclick="loadUserImages('clothes', 'human')" data-category="clothes">
-                                            <i class="bi bi-bag"></i> 其他图片
-                                        </button>
+            <!-- 试穿界面 -->
+            <div class="card-genshin">
+                <div class="card-body">
+                    <div class="row">
+                        <!-- 左侧：图片选择 -->
+                        <div class="col-md-8">
+                            <div class="row">
+                                <!-- 人物图片选择 -->
+                                <div class="col-md-6">
+                                    <h5><i class="bi bi-person"></i> 选择人物图片</h5>
+                                    <div class="mb-3">
+                                        <div class="category-tabs">
+                                            <button class="btn btn-outline-genshin active" onclick="loadUserImages('char', 'human')" data-category="char">
+                                                <i class="bi bi-person"></i> 角色图片
+                                            </button>
+                                            <button class="btn btn-outline-genshin" onclick="loadUserImages('clothes', 'human')" data-category="clothes">
+                                                <i class="bi bi-bag"></i> 其他图片
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                                <div id="humanImageList" class="image-grid">
-                                    <div class="text-center p-4">
-                                        <div class="spinner-border" role="status">
-                                            <span class="visually-hidden">加载中...</span>
+                                    <div id="humanImageList" class="image-grid">
+                                        <div class="text-center p-4">
+                                            <div class="spinner-border" role="status">
+                                                <span class="visually-hidden">加载中...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="selectedHuman" class="selected-image-preview d-none slide-down">
+                                        <h6><i class="bi bi-check-circle text-success"></i> 已选择的人物图片:</h6>
+                                        <div class="position-relative d-inline-block">
+                                            <img id="selectedHumanImg" src="" alt="选中的人物图片" class="img-thumbnail preview-image">
+                                            <button class="btn btn-sm btn-danger position-absolute top-0 end-0 clear-btn" onclick="clearSelection('human')" title="取消选择">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        </div>
+                                        <div class="mt-2">
+                                            <small id="selectedHumanName" class="text-muted"></small>
                                         </div>
                                     </div>
                                 </div>
-                                <div id="selectedHuman" class="selected-image-preview d-none slide-down">
-                                    <h6><i class="bi bi-check-circle text-success"></i> 已选择的人物图片:</h6>
-                                    <div class="position-relative d-inline-block">
-                                        <img id="selectedHumanImg" src="" alt="选中的人物图片" class="img-thumbnail preview-image">
-                                        <button class="btn btn-sm btn-danger position-absolute top-0 end-0 clear-btn" onclick="clearSelection('human')" title="取消选择">
-                                            <i class="bi bi-x"></i>
-                                        </button>
-                                    </div>
-                                    <div class="mt-2">
-                                        <small id="selectedHumanName" class="text-muted"></small>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <!-- 服装图片选择 -->
-                            <div class="col-md-6">
-                                <h5><i class="bi bi-bag"></i> 选择服装图片</h5>
-                                <div class="mb-3">
-                                    <div class="category-tabs">
-                                        <button class="btn btn-outline-primary active" onclick="loadUserImages('clothes', 'garment')" data-category="clothes">
-                                            <i class="bi bi-bag"></i> 服装图片
-                                        </button>
-                                        <button class="btn btn-outline-primary" onclick="loadUserImages('char', 'garment')" data-category="char">
-                                            <i class="bi bi-person"></i> 其他图片
-                                        </button>
+                                <!-- 服装图片选择 -->
+                                <div class="col-md-6">
+                                    <h5><i class="bi bi-bag"></i> 选择服装图片</h5>
+                                    <div class="mb-3">
+                                        <div class="category-tabs">
+                                            <button class="btn btn-outline-genshin active" onclick="loadUserImages('clothes', 'garment')" data-category="clothes">
+                                                <i class="bi bi-bag"></i> 服装图片
+                                            </button>
+                                            <button class="btn btn-outline-genshin" onclick="loadUserImages('char', 'garment')" data-category="char">
+                                                <i class="bi bi-person"></i> 其他图片
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                                <div id="garmentImageList" class="image-grid">
-                                    <div class="text-center p-4">
-                                        <div class="spinner-border" role="status">
-                                            <span class="visually-hidden">加载中...</span>
+                                    <div id="garmentImageList" class="image-grid">
+                                        <div class="text-center p-4">
+                                            <div class="spinner-border" role="status">
+                                                <span class="visually-hidden">加载中...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="selectedGarment" class="selected-image-preview d-none slide-down">
+                                        <h6><i class="bi bi-check-circle text-success"></i> 已选择的服装图片:</h6>
+                                        <div class="position-relative d-inline-block">
+                                            <img id="selectedGarmentImg" src="" alt="选中的服装图片" class="img-thumbnail preview-image">
+                                            <button class="btn btn-sm btn-danger position-absolute top-0 end-0 clear-btn" onclick="clearSelection('garment')" title="取消选择">
+                                                <i class="bi bi-x"></i>
+                                            </button>
+                                        </div>
+                                        <div class="mt-2">
+                                            <small id="selectedGarmentName" class="text-muted"></small>
                                         </div>
                                     </div>
                                 </div>
-                                <div id="selectedGarment" class="selected-image-preview d-none slide-down">
-                                    <h6><i class="bi bi-check-circle text-success"></i> 已选择的服装图片:</h6>
-                                    <div class="position-relative d-inline-block">
-                                        <img id="selectedGarmentImg" src="" alt="选中的服装图片" class="img-thumbnail preview-image">
-                                        <button class="btn btn-sm btn-danger position-absolute top-0 end-0 clear-btn" onclick="clearSelection('garment')" title="取消选择">
-                                            <i class="bi bi-x"></i>
-                                        </button>
+                            </div>
+                        </div>
+
+                        <!-- 右侧：参数设置 -->
+                        <div class="col-md-4">
+                            <div class="card-genshin tryon-params-panel-subtle params-panel-new">
+                                <h5 class="params-title"><i class="bi bi-sliders"></i> 试穿参数</h5>
+                            
+                            <!-- 服装描述 -->
+                            <div class="mb-3">
+                                <label for="garmentDescription" class="form-label params-label">服装描述</label>
+                                <input type="text" class="form-control tryon-input-enhanced params-input" id="garmentDescription" 
+                                       placeholder="例如: a white shirt, a blue dress" value="a shirt">
+                                <div class="form-text params-help">描述服装类型，帮助AI更好地理解</div>
+                            </div>
+
+                            <!-- 自动遮罩 -->
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input params-switch" type="checkbox" id="autoMask" checked>
+                                    <label class="form-check-label params-label" for="autoMask">
+                                        自动生成遮罩
+                                    </label>
+                                </div>
+                                <div class="form-text params-help">使用AI自动检测人物身体部位</div>
+                            </div>
+
+                            <!-- 自动裁剪 -->
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input params-switch" type="checkbox" id="autoCrop">
+                                    <label class="form-check-label params-label" for="autoCrop">
+                                        自动裁剪图片
+                                    </label>
+                                </div>
+                                <div class="form-text params-help">自动裁剪图片以适应标准比例</div>
+                            </div>
+
+                            <!-- 去噪步骤 -->
+                            <div class="mb-3">
+                                <label for="denoiseSteps" class="form-label params-label">去噪步骤数</label>
+                                <input type="range" class="form-range params-range" id="denoiseSteps" 
+                                       min="1" max="50" value="25" oninput="updateStepsValue(this.value)">
+                                <div class="d-flex justify-content-between">
+                                    <small class="text-muted params-small">1 (快速)</small>
+                                    <span id="stepsValue" class="badge bg-primary params-badge">25</span>
+                                    <small class="text-muted params-small">50 (高质量)</small>
+                                </div>
+                                <div class="form-text params-help">步骤越多，质量越高但时间越长</div>
+                            </div>
+
+                            <!-- 随机种子 -->
+                            <div class="mb-3">
+                                <label for="seed" class="form-label params-label">随机种子</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control tryon-input-enhanced params-input" id="seed" 
+                                           value="42" min="0" max="999999">
+                                    <button class="btn btn-outline-genshin" type="button" onclick="randomSeed()">
+                                        <i class="bi bi-shuffle"></i>
+                                    </button>
+                                </div>
+                                <div class="form-text params-help">相同种子产生相同结果，便于复现</div>
+                            </div>
+
+                            <!-- 预设配置 -->
+                            <div class="mb-3">
+                                <label class="form-label params-label">快速配置</label>
+                                <div class="btn-group w-100" role="group">
+                                    <button type="button" class="btn btn-outline-genshin btn-sm" onclick="setPreset('fast')">
+                                        <i class="bi bi-lightning"></i> 快速
+                                    </button>
+                                    <button type="button" class="btn btn-outline-genshin btn-sm" onclick="setPreset('normal')">
+                                        <i class="bi bi-gear"></i> 标准
+                                    </button>
+                                    <button type="button" class="btn btn-outline-genshin btn-sm" onclick="setPreset('quality')">
+                                        <i class="bi bi-gem"></i> 高质量
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 开始试穿按钮 -->
+                            <div class="d-grid">
+                                <button class="btn btn-genshin btn-lg" id="startTryonBtn" onclick="startVirtualTryon()" disabled>
+                                    <i class="bi bi-magic"></i> 开始虚拟试穿
+                                </button>
+                            </div>
+
+                            <!-- 试穿进度 -->
+                            <div id="tryonProgress" class="mt-3 d-none">
+                                <div class="alert alert-info params-progress-alert">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                        <span id="progressText" class="params-progress-text">正在处理中，请稍候...</span>
                                     </div>
-                                    <div class="mt-2">
-                                        <small id="selectedGarmentName" class="text-muted"></small>
+                                    <div class="progress mt-2">
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                             style="width: 0%" id="progressBar"></div>
                                     </div>
+                                    <small class="text-muted mt-1 params-small" id="timeEstimate"></small>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- 右侧：参数设置 -->
-                    <div class="col-md-4">
-                        <h5><i class="bi bi-sliders"></i> 试穿参数</h5>
-                        
-                        <!-- 服装描述 -->
-                        <div class="mb-3">
-                            <label for="garmentDescription" class="form-label">服装描述</label>
-                            <input type="text" class="form-control" id="garmentDescription" 
-                                   placeholder="例如: a white shirt, a blue dress" value="a shirt">
-                            <div class="form-text">描述服装类型，帮助AI更好地理解</div>
-                        </div>
-
-                        <!-- 自动遮罩 -->
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="autoMask" checked>
-                                <label class="form-check-label" for="autoMask">
-                                    自动生成遮罩
-                                </label>
-                            </div>
-                            <div class="form-text">使用AI自动检测人物身体部位</div>
-                        </div>
-
-                        <!-- 自动裁剪 -->
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="autoCrop">
-                                <label class="form-check-label" for="autoCrop">
-                                    自动裁剪图片
-                                </label>
-                            </div>
-                            <div class="form-text">自动裁剪图片以适应标准比例</div>
-                        </div>
-
-                        <!-- 去噪步骤 -->
-                        <div class="mb-3">
-                            <label for="denoiseSteps" class="form-label">去噪步骤数</label>
-                            <input type="range" class="form-range" id="denoiseSteps" 
-                                   min="1" max="50" value="25" oninput="updateStepsValue(this.value)">
-                            <div class="d-flex justify-content-between">
-                                <small class="text-muted">1 (快速)</small>
-                                <span id="stepsValue" class="badge bg-primary">25</span>
-                                <small class="text-muted">50 (高质量)</small>
-                            </div>
-                            <div class="form-text">步骤越多，质量越高但时间越长</div>
-                        </div>
-
-                        <!-- 随机种子 -->
-                        <div class="mb-3">
-                            <label for="seed" class="form-label">随机种子</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="seed" 
-                                       value="42" min="0" max="999999">
-                                <button class="btn btn-outline-secondary" type="button" onclick="randomSeed()">
-                                    <i class="bi bi-shuffle"></i>
-                                </button>
-                            </div>
-                            <div class="form-text">相同种子产生相同结果，便于复现</div>
-                        </div>
-
-                        <!-- 预设配置 -->
-                        <div class="mb-3">
-                            <label class="form-label">快速配置</label>
-                            <div class="btn-group w-100" role="group">
-                                <button type="button" class="btn btn-outline-success btn-sm" onclick="setPreset('fast')">
-                                    快速
-                                </button>
-                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="setPreset('normal')">
-                                    标准
-                                </button>
-                                <button type="button" class="btn btn-outline-warning btn-sm" onclick="setPreset('quality')">
-                                    高质量
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 开始试穿按钮 -->
-                        <div class="d-grid">
-                            <button class="btn btn-primary btn-lg" id="startTryonBtn" onclick="startVirtualTryon()" disabled>
-                                <i class="bi bi-magic"></i> 开始虚拟试穿
-                            </button>
-                        </div>
-
-                        <!-- 试穿进度 -->
-                        <div id="tryonProgress" class="mt-3 d-none">
-                            <div class="alert alert-info">
-                                <div class="d-flex align-items-center">
-                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                    <span id="progressText">正在处理中，请稍候...</span>
-                                </div>
-                                <div class="progress mt-2">
-                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                         style="width: 0%" id="progressBar"></div>
-                                </div>
-                                <small class="text-muted mt-1" id="timeEstimate"></small>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- 试穿结果 -->
-        <div id="tryonResults" class="card mt-4 d-none">
-            <div class="card-header">
-                <h5><i class="bi bi-image"></i> 试穿结果</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>试穿效果</h6>
-                        <div class="result-image-container">
-                            <img id="resultImage" src="" alt="试穿结果" class="img-fluid rounded">
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>生成遮罩</h6>
-                        <div class="result-image-container">
-                            <img id="maskImage" src="" alt="遮罩图片" class="img-fluid rounded">
-                        </div>
-                    </div>
+            <!-- 试穿结果 -->
+            <div id="tryonResults" class="card mt-4 d-none">
+                <div class="card-header">
+                    <h5><i class="bi bi-image"></i> 试穿结果</h5>
                 </div>
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div id="resultInfo" class="text-muted">
-                                <!-- 结果信息 -->
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>试穿效果</h6>
+                            <div class="result-image-container">
+                                <img id="resultImage" src="" alt="试穿结果" class="img-fluid rounded">
                             </div>
-                            <div>
-                                <button id="favoriteResultBtn" class="btn btn-outline-danger me-2 d-none" onclick="toggleResultFavorite()">
-                                    <i class="bi bi-heart"></i> <span id="favoriteResultText">收藏结果</span>
-                                </button>
-                                <button class="btn btn-outline-primary me-2" onclick="downloadResult()">
-                                    <i class="bi bi-download"></i> 下载结果
-                                </button>
-                                <button class="btn btn-success" onclick="startNewTryon()">
-                                    <i class="bi bi-arrow-clockwise"></i> 重新试穿
-                                </button>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>生成遮罩</h6>
+                            <div class="result-image-container">
+                                <img id="maskImage" src="" alt="遮罩图片" class="img-fluid rounded">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div id="resultInfo" class="text-muted">
+                                    <!-- 结果信息 -->
+                                </div>
+                                <div>
+                                    <button id="favoriteResultBtn" class="btn btn-outline-danger me-2 d-none" onclick="toggleResultFavorite()">
+                                        <i class="bi bi-heart"></i> <span id="favoriteResultText">收藏结果</span>
+                                    </button>
+                                    <button class="btn btn-genshin me-2" onclick="downloadResult()">
+                                        <i class="bi bi-download"></i> 下载结果
+                                    </button>
+                                    <button class="btn btn-success" onclick="startNewTryon()">
+                                        <i class="bi bi-arrow-clockwise"></i> 重新试穿
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -362,7 +366,7 @@
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">加载中...</span>
                     </div>
-                    <p class="mt-2 text-muted">正在加载${category === 'char' ? '角色' : '服装'}图片...</p>
+                    <p class="mt-2" style="color: #000000;">正在加载${category === 'char' ? '角色' : '服装'}图片...</p>
                 </div>
             `;
 
@@ -406,14 +410,14 @@
                 `).join('');
             } else {
                 console.log(`没有找到 ${category} 图片`);
-                container.innerHTML = `
-                    <div class="text-center p-4 empty-state fade-in">
-                        <i class="bi bi-images text-muted" style="font-size: 3rem;"></i>
-                        <h6 class="mt-3 text-muted">暂无${category === 'char' ? '角色' : '服装'}图片</h6>
-                        <p class="text-muted mb-3">请先上传一些${category === 'char' ? '人物角色' : '服装'}图片</p>
-                        <a href="/" class="btn btn-outline-primary btn-sm">
-                            <i class="bi bi-upload"></i> 去上传图片
-                        </a>
+                                container.innerHTML = `
+                    <div class="empty-state fade-in d-flex align-items-center justify-content-center" style="height: 100%;">
+                        <div class="d-flex flex-column align-items-center justify-content-center text-center" style="width: 100%;">
+                            <i class="bi bi-images" style="font-size: 3rem; color: #000000; margin-bottom: 1rem;"></i>
+                            <h6 style="color: #000000; margin-bottom: 0.5rem;">暂无${category === 'char' ? '角色' : '服装'}图片</h6>
+                            <p style="color: #000000; margin-bottom: 1rem;">请先上传一些${category === 'char' ? '人物角色' : '服装'}图片</p>
+                            <a href="/" class="btn btn-genshin btn-sm d-inline-flex align-items-center justify-content-center" style="white-space: nowrap;"><i class="bi bi-upload me-1"></i>去上传图片</a>
+                        </div>
                     </div>
                 `;
             }
@@ -424,9 +428,9 @@
                 <div class="text-center p-4 error-state fade-in">
                     <i class="bi bi-exclamation-triangle text-danger" style="font-size: 2.5rem;"></i>
                     <h6 class="mt-3 text-danger">加载失败</h6>
-                    <p class="text-muted mb-3">错误信息: ${error.message}</p>
-                    <button class="btn btn-outline-danger btn-sm" onclick="loadUserImages('${category}', '${type}')">
-                        <i class="bi bi-arrow-clockwise"></i> 重新加载
+                    <p class="mb-3" style="color: #721c24;">错误信息: ${error.message}</p>
+                    <button class="btn btn-outline-danger btn-sm d-flex align-items-center justify-content-center" onclick="loadUserImages('${category}', '${type}')">
+                        <i class="bi bi-arrow-clockwise me-1"></i> 重新加载
                     </button>
                 </div>
             `;
@@ -685,7 +689,7 @@
                             </div>
                             <div class="btn-group">
                                 ${data.result.has_original_page ? `
-                                    <button class="btn btn-sm btn-outline-info" 
+                                    <button class="btn btn-sm btn-outline-genshin" 
                                             onclick="visitOriginalPage('${data.result.original_page_url}')" 
                                             title="访问服装原页面">
                                         <i class="bi bi-box-arrow-up-right"></i>
@@ -776,11 +780,11 @@
                                     <i class="bi ${item.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i> 
                                     ${item.is_favorited ? '已收藏' : '收藏'}
                                 </button>
-                                <a href="${item.result_url}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                <a href="${item.result_url}" class="btn btn-sm btn-genshin" target="_blank">
                                     <i class="bi bi-eye"></i> 查看结果
                                 </a>
                                 ${item.mask_url ? `
-                                    <a href="${item.mask_url}" class="btn btn-sm btn-outline-secondary" target="_blank">
+                                    <a href="${item.mask_url}" class="btn btn-sm btn-outline-genshin" target="_blank">
                                         <i class="bi bi-eye"></i> 查看遮罩
                                     </a>
                                 ` : ''}
@@ -994,6 +998,209 @@
 </script>
 
 <style>
+    /* 参数面板新样式 */
+    .params-panel-new {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
+        border: 1px solid #dee2e6 !important;
+        border-radius: 15px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+        padding: 25px !important;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .params-panel-new::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #007bff, #6610f2, #e83e8c, #fd7e14);
+        border-radius: 15px 15px 0 0;
+    }
+
+    .params-title {
+        color: #495057 !important;
+        font-weight: 700 !important;
+        margin-bottom: 20px !important;
+        font-size: 1.25rem !important;
+        text-align: center;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .params-label {
+        color: #495057 !important;
+        font-weight: 600 !important;
+        margin-bottom: 8px !important;
+        font-size: 0.95rem !important;
+    }
+
+    .params-help {
+        color: #6c757d !important;
+        font-size: 0.8rem !important;
+        margin-top: 4px !important;
+        font-weight: 400 !important;
+    }
+
+    .params-small {
+        color: #6c757d !important;
+        font-weight: 500 !important;
+        font-size: 0.75rem !important;
+    }
+
+    .params-input {
+        background: #ffffff !important;
+        border: 1px solid #ced4da !important;
+        border-radius: 8px !important;
+        padding: 10px 12px !important;
+        color: #495057 !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .params-input:focus {
+        border-color: #007bff !important;
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1) !important;
+        background: #ffffff !important;
+        color: #495057 !important;
+    }
+
+    .params-input::placeholder {
+        color: #adb5bd !important;
+        font-weight: 400 !important;
+    }
+
+    .params-switch {
+        transform: scale(1.1);
+        filter: hue-rotate(15deg);
+    }
+
+    .params-switch:checked {
+        background-color: #007bff !important;
+        border-color: #007bff !important;
+    }
+
+    .params-range {
+        background: transparent !important;
+        height: 6px !important;
+        border-radius: 3px !important;
+        outline: none !important;
+        margin: 10px 0 !important;
+    }
+
+    .params-range::-webkit-slider-track {
+        background: #e9ecef !important;
+        border-radius: 3px !important;
+        height: 6px !important;
+    }
+
+    .params-range::-webkit-slider-thumb {
+        appearance: none !important;
+        width: 20px !important;
+        height: 20px !important;
+        border-radius: 50% !important;
+        background: #007bff !important;
+        cursor: pointer !important;
+        border: 2px solid #ffffff !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+        transition: all 0.3s ease !important;
+    }
+
+    .params-range::-webkit-slider-thumb:hover {
+        background: #0056b3 !important;
+        transform: scale(1.1) !important;
+    }
+
+    .params-badge {
+        background: linear-gradient(135deg, #007bff, #0056b3) !important;
+        color: white !important;
+        padding: 6px 12px !important;
+        border-radius: 15px !important;
+        font-weight: 600 !important;
+        font-size: 0.8rem !important;
+        box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3) !important;
+    }
+
+    .params-progress-alert {
+        background: rgba(255, 255, 255, 0.95) !important;
+        border: 1px solid #bee5eb !important;
+        border-radius: 10px !important;
+        padding: 15px !important;
+        backdrop-filter: blur(5px) !important;
+    }
+
+    /* 参数面板内的按钮组优化 */
+    .params-panel-new .btn-group .btn {
+        margin-right: -1px;
+    }
+
+    .params-panel-new .btn-group .btn:first-child {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .params-panel-new .btn-group .btn:last-child {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+
+    .params-panel-new .btn-group .btn:not(:first-child):not(:last-child) {
+        border-radius: 0;
+    }
+
+    /* 预设配置按钮文字颜色 */
+    .params-panel-new .btn-group .btn-outline-genshin {
+        color: #000000 !important;
+    }
+
+    .params-panel-new .btn-group .btn-outline-genshin:hover {
+        color: #ffffff !important;
+    }
+
+    .params-panel-new .btn-group .btn-outline-genshin:focus {
+        color: #ffffff !important;
+    }
+
+    .params-panel-new .btn-group .btn-outline-genshin:active {
+        color: #ffffff !important;
+    }
+
+    .params-progress-text {
+        color: #0c5460 !important;
+        font-weight: 500 !important;
+    }
+
+    /* 修复其他样式冲突 */
+    .params-panel-new .form-check-input {
+        margin-top: 0.125rem !important;
+    }
+
+    .params-panel-new .input-group {
+        border-radius: 8px !important;
+        overflow: hidden !important;
+    }
+
+    .params-panel-new .input-group .form-control {
+        border-right: none !important;
+    }
+
+    .params-panel-new .input-group .btn {
+        border-left: none !important;
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .params-panel-new {
+            padding: 20px !important;
+            margin-top: 20px !important;
+        }
+        
+        .params-title {
+            font-size: 1.1rem !important;
+        }
+    }
+
     /* 按钮样式统一 */
     .category-tabs .btn {
         border-radius: 0;
@@ -1031,13 +1238,138 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
         gap: 15px;
-        max-height: 400px;
+        max-height: 550px;
+        min-height: 350px;
+        height: 350px;
         overflow-y: auto;
         border: 1px solid #dee2e6;
         border-radius: 0.75rem;
-        padding: 15px;
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 20px;
+        background: #f8f9fa;
         transition: all 0.3s ease;
+    }
+
+    /* 修复字体颜色问题 - 强制覆盖 */
+    .text-muted,
+    .text-muted * {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .form-text,
+    .form-text * {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .card-text,
+    .card-text * {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .small,
+    .small * {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .form-label,
+    .form-label * {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+
+    .form-check-label,
+    .form-check-label * {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 特定元素颜色修复 */
+    #selectedHumanName,
+    #selectedGarmentName {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .selected-image-preview h6 {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+
+    .selected-image-preview small {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 确保所有文本在白色背景上可见 */
+    .card-genshin .text-muted,
+    .card-genshin .form-text,
+    .card-genshin .small {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .card-genshin .form-label,
+    .card-genshin .form-check-label {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 修复标题和段落颜色 */
+    .card-genshin h5 {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+
+    .card-genshin h6 {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+
+    .card-genshin p {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 修复进度文本颜色 */
+    #progressText,
+    #timeEstimate {
+        color: #0c5460 !important;
+        font-weight: 500 !important;
+    }
+
+    .params-progress-text {
+        color: #0c5460 !important;
+        font-weight: 500 !important;
+    }
+
+    .params-small {
+        color: #6c757d !important;
+        font-weight: 500 !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* 修复所有可能的文本颜色 */
+    .card-genshin * {
+        color: inherit;
+    }
+
+    .card-genshin .text-muted,
+    .card-genshin .form-text,
+    .card-genshin .small,
+    .card-genshin p {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
+    .card-genshin .form-label,
+    .card-genshin .form-check-label,
+    .card-genshin h5,
+    .card-genshin h6 {
+        color: #000000 !important;
+        font-weight: 700 !important;
     }
 
     .image-grid:hover {
@@ -1125,9 +1457,9 @@
         display: block;
         margin-top: 8px;
         font-size: 0.75rem;
-        color: #6c757d;
+        color: #000000;
         word-break: break-all;
-        font-weight: 500;
+        font-weight: 600;
         transition: color 0.3s ease;
     }
 
@@ -1137,7 +1469,7 @@
 
     /* 选中图片预览动效 */
     .selected-image-preview {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        background: #f8f9fa;
         border: 2px solid #dee2e6;
         border-radius: 0.75rem;
         padding: 20px;
@@ -1188,7 +1520,7 @@
         border: 2px solid #dee2e6;
         border-radius: 0.75rem;
         padding: 15px;
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        background: #f8f9fa;
         transition: all 0.3s ease;
         overflow: hidden;
     }
@@ -1252,6 +1584,11 @@
         animation: pulse 2s infinite;
     }
 
+    .loading-state p {
+        color: #000000 !important;
+        font-weight: 600 !important;
+    }
+
     @keyframes pulse {
         0% { opacity: 0.6; }
         50% { opacity: 1; }
@@ -1281,22 +1618,47 @@
 
     /* 空状态样式 */
     .empty-state {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        background: #f8f9fa;
         border: 2px dashed #dee2e6;
         border-radius: 0.75rem;
         transition: all 0.3s ease;
+        min-height: 250px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+    }
+
+    .empty-state .d-flex.flex-column {
+        width: 100%;
+        align-items: center;
+        justify-content: center;
     }
 
     .empty-state:hover {
         border-color: #0d6efd;
-        background: linear-gradient(135deg, #e7f1ff 0%, #cfe2ff 100%);
+        background: #e7f1ff;
+    }
+
+    .empty-state h6,
+    .empty-state p {
+        color: #000000 !important;
+        font-weight: 600 !important;
     }
 
     /* 错误状态样式 */
     .error-state {
-        background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+        background: #f8d7da;
         border: 2px solid #f5c2c7;
         border-radius: 0.75rem;
+    }
+
+    .error-state h6,
+    .error-state p {
+        color: #721c24 !important;
+        font-weight: 600 !important;
     }
 
     .error-img {
@@ -1307,18 +1669,19 @@
         justify-content: center;
         background: #f8f9fa;
         border-radius: 0.375rem;
-        color: #6c757d;
+        color: #000000;
         font-size: 2rem;
+        font-weight: 600;
     }
 
     /* 主要按钮动效 */
-    .btn-primary.btn-lg {
+    .btn-genshin.btn-lg {
         position: relative;
         overflow: hidden;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    .btn-primary.btn-lg::before {
+    .btn-genshin.btn-lg::before {
         content: '';
         position: absolute;
         top: 0;
@@ -1329,27 +1692,27 @@
         transition: left 0.5s ease;
     }
 
-    .btn-primary.btn-lg:hover::before {
+    .btn-genshin.btn-lg:hover::before {
         left: 100%;
     }
 
-    .btn-primary.btn-lg:hover {
+    .btn-genshin.btn-lg:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 25px rgba(13, 110, 253, 0.4);
     }
 
-    .btn-primary.btn-lg:active {
+    .btn-genshin.btn-lg:active {
         transform: translateY(0);
     }
 
     /* 卡片动效 */
-    .card {
+    .card-genshin {
         transition: all 0.3s ease;
         border: none;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
 
-    .card:hover {
+    .card-genshin:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
     }
@@ -1377,6 +1740,37 @@
         backdrop-filter: blur(10px);
         border-radius: 0.75rem;
         border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* 强制覆盖输入框样式 */
+    #garmentDescription,
+    #garmentDescription::placeholder,
+    #seed,
+    #seed::placeholder {
+        color: #111 !important;
+        background-color: #f5f6fa !important;
+        font-weight: 600 !important;
+    }
+
+    /* 强制覆盖随机种子按钮样式 */
+    .input-group .btn-outline-genshin {
+        color: #0d6efd !important;
+        border-color: #0d6efd !important;
+        background-color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+
+    .input-group .btn-outline-genshin:hover {
+        color: #ffffff !important;
+        background-color: #0d6efd !important;
+        border-color: #0d6efd !important;
+    }
+
+    /* 按钮文字横向排列 */
+    .btn-genshin .d-inline-flex {
+        display: inline-flex !important;
+        align-items: center !important;
+        flex-direction: row !important;
     }
 </style>
 {% endblock %}

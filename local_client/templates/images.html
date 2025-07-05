@@ -5,94 +5,133 @@
 {% block content %}
 <!-- 登录提示 -->
 <div id="loginPrompt" class="login-required d-none">
-    <h3><i class="bi bi-lock"></i> 需要登录</h3>
-    <p>您需要登录后才能查看和管理您的图片</p>
-    <button class="btn btn-primary me-2" onclick="showLoginModal()">
-        <i class="bi bi-box-arrow-in-right"></i> 登录
-    </button>
-    <button class="btn btn-outline-primary" onclick="showRegisterModal()">
-        <i class="bi bi-person-plus"></i> 注册
-    </button>
+    <div class="card-genshin">
+        <h3 class="hero-title" style="font-size: 2rem;"><i class="bi bi-lock"></i> 需要登录</h3>
+        <p class="hero-subtitle">您需要登录后才能查看和管理您的图片</p>
+        <div class="mt-4">
+            <button class="btn btn-genshin me-3" onclick="showLoginModal()">
+                <i class="bi bi-box-arrow-in-right"></i> 登录
+            </button>
+            <button class="btn btn-outline-genshin" onclick="showRegisterModal()">
+                <i class="bi bi-person-plus"></i> 注册
+            </button>
+        </div>
+    </div>
 </div>
 
 <!-- 登录后的内容 -->
 <div id="loggedInContent" class="d-none">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i class="bi bi-images"></i> 我的图片库</h1>
+        <h1 class="hero-title" style="font-size: 2.5rem;"><i class="bi bi-images"></i> 我的图片库</h1>
         <div class="d-flex gap-2">
             <div class="btn-group" role="group">
                 <input type="radio" class="btn-check" name="viewMode" id="gridView" checked>
-                <label class="btn btn-outline-primary" for="gridView">
+                <label class="btn btn-outline-genshin" for="gridView">
                     <i class="bi bi-grid-3x3-gap"></i> 网格
                 </label>
                 <input type="radio" class="btn-check" name="viewMode" id="listView">
-                <label class="btn btn-outline-primary" for="listView">
+                <label class="btn btn-outline-genshin" for="listView">
                     <i class="bi bi-list"></i> 列表
                 </label>
             </div>
-            <button class="btn btn-secondary" onclick="loadImages()">
+            <button class="btn btn-outline-genshin" onclick="toggleSelectMode()">
+                <i class="bi bi-check2-square"></i> 选择
+            </button>
+            <button class="btn btn-outline-genshin" onclick="loadImages()">
                 <i class="bi bi-arrow-clockwise"></i> 刷新
             </button>
-            <button class="btn btn-success" onclick="syncToCloud()">
+            <button class="btn btn-genshin" onclick="syncToCloud()">
                 <i class="bi bi-cloud-upload"></i> 同步到云端
             </button>
         </div>
     </div>
 
-    <!-- 分类标签页 -->
-    <div class="mb-4">
-        <ul class="nav nav-pills" id="categoryTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="all-tab" data-category="" onclick="switchCategory('')">
-                    <i class="bi bi-grid-3x3-gap"></i> 全部
-                    <span class="badge bg-secondary ms-1" id="all-count">0</span>
+    <!-- 多选模式工具栏 -->
+    <div id="selectionToolbar" class="card-genshin mb-3 d-none">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-muted">已选择 <span id="selectedCount">0</span> 张图片</span>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-outline-genshin btn-sm" onclick="selectAll()">
+                        <i class="bi bi-check-all"></i> 全选
+                    </button>
+                    <button class="btn btn-outline-genshin btn-sm" onclick="clearSelection()">
+                        <i class="bi bi-x-square"></i> 清除
+                    </button>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-genshin btn-sm" onclick="batchAddToFavorites()">
+                    <i class="bi bi-heart"></i> 收藏
                 </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="clothes-tab" data-category="clothes" onclick="switchCategory('clothes')">
-                    <i class="bi bi-bag"></i> 服装
-                    <span class="badge bg-secondary ms-1" id="clothes-count">0</span>
+                <button class="btn btn-outline-danger btn-sm" onclick="confirmBatchDelete()">
+                    <i class="bi bi-trash"></i> 删除
                 </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="char-tab" data-category="char" onclick="switchCategory('char')">
-                    <i class="bi bi-person"></i> 人物
-                    <span class="badge bg-secondary ms-1" id="char-count">0</span>
+                <button class="btn btn-outline-genshin btn-sm" onclick="exitSelectMode()">
+                    <i class="bi bi-x"></i> 取消
                 </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="vton_results-tab" data-category="vton_results" onclick="switchCategory('vton_results')">
-                    <i class="bi bi-magic"></i> 试穿结果
-                    <span class="badge bg-secondary ms-1" id="vton_results-count">0</span>
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="favorites-tab" data-category="favorites" onclick="switchCategory('favorites')">
-                    <i class="bi bi-heart-fill"></i> 收藏
-                    <span class="badge bg-secondary ms-1" id="favorites-count">0</span>
-                </button>
-            </li>
-        </ul>
+            </div>
+        </div>
     </div>
 
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <input type="text" class="form-control" id="searchInput" placeholder="搜索页面标题或URL...">
+    <!-- 分类标签页 -->
+    <div class="mb-4">
+        <div class="card-genshin">
+            <ul class="nav nav-pills" id="categoryTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="all-tab" data-category="" onclick="switchCategory('')">
+                        <i class="bi bi-grid-3x3-gap"></i> 全部
+                        <span class="badge bg-secondary ms-1" id="all-count">0</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="clothes-tab" data-category="clothes" onclick="switchCategory('clothes')">
+                        <i class="bi bi-bag"></i> 服装
+                        <span class="badge bg-secondary ms-1" id="clothes-count">0</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="char-tab" data-category="char" onclick="switchCategory('char')">
+                        <i class="bi bi-person"></i> 人物
+                        <span class="badge bg-secondary ms-1" id="char-count">0</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="vton_results-tab" data-category="vton_results" onclick="switchCategory('vton_results')">
+                        <i class="bi bi-magic"></i> 试穿结果
+                        <span class="badge bg-secondary ms-1" id="vton_results-count">0</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="favorites-tab" data-category="favorites" onclick="switchCategory('favorites')">
+                        <i class="bi bi-heart-fill"></i> 收藏
+                        <span class="badge bg-secondary ms-1" id="favorites-count">0</span>
+                    </button>
+                </li>
+            </ul>
         </div>
-        <div class="col-md-3">
-            <select class="form-select" id="sortSelect">
-                <option value="saved_at_desc">按保存时间（新到旧）</option>
-                <option value="saved_at_asc">按保存时间（旧到新）</option>
-                <option value="file_size_desc">按文件大小（大到小）</option>
-                <option value="file_size_asc">按文件大小（小到大）</option>
-            </select>
-        </div>
-        <div class="col-md-3">
-            <select class="form-select" id="perPageSelect">
-                <option value="20">每页20张</option>
-                <option value="50">每页50张</option>
-                <option value="100">每页100张</option>
-            </select>
+    </div>
+
+    <div class="card-genshin mb-3">
+        <div class="row">
+            <div class="col-md-6">
+                <input type="text" class="form-control" id="searchInput" placeholder="搜索页面标题或URL...">
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="sortSelect">
+                    <option value="saved_at_desc">按保存时间（新到旧）</option>
+                    <option value="saved_at_asc">按保存时间（旧到新）</option>
+                    <option value="file_size_desc">按文件大小（大到小）</option>
+                    <option value="file_size_asc">按文件大小（小到大）</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="perPageSelect">
+                    <option value="20">每页20张</option>
+                    <option value="50">每页50张</option>
+                    <option value="100">每页100张</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -106,6 +145,31 @@
 
     <nav id="pagination" class="mt-4"></nav>
 </div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-labelledby="confirmDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmDeleteModalLabel">
+                    <i class="bi bi-exclamation-triangle text-warning"></i> 确认删除
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmText">确定要删除选中的图片吗？此操作不可恢复。</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-genshin" data-bs-dismiss="modal">
+                    <i class="bi bi-x"></i> 取消
+                </button>
+                <button type="button" class="btn btn-danger" onclick="executeBatchDelete()" data-bs-dismiss="modal">
+                    <i class="bi bi-trash"></i> 确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -114,6 +178,8 @@
     let totalPages = 1;
     let currentViewMode = 'grid';
     let currentCategory = ''; // 当前选中的分类
+    let selectMode = false; // 是否在选择模式
+    let selectedImages = new Set(); // 存储选中的图片ID
 
     document.addEventListener('DOMContentLoaded', function () {
         // 监听认证状态变化
@@ -333,6 +399,175 @@
         }
     }
 
+    // 多选模式相关函数
+    function toggleSelectMode() {
+        selectMode = !selectMode;
+        selectedImages.clear();
+        
+        if (selectMode) {
+            document.getElementById('selectionToolbar').classList.remove('d-none');
+            updateSelectedCount();
+        } else {
+            document.getElementById('selectionToolbar').classList.add('d-none');
+        }
+        
+        // 重新渲染图片列表
+        loadImages();
+    }
+
+    function exitSelectMode() {
+        selectMode = false;
+        selectedImages.clear();
+        document.getElementById('selectionToolbar').classList.add('d-none');
+        loadImages();
+    }
+
+    function toggleImageSelection(imageId) {
+        if (selectedImages.has(imageId)) {
+            selectedImages.delete(imageId);
+        } else {
+            selectedImages.add(imageId);
+        }
+        
+        // 更新复选框状态
+        const checkbox = document.getElementById(`select-${imageId}`);
+        if (checkbox) {
+            checkbox.checked = selectedImages.has(imageId);
+        }
+        
+        // 更新卡片的选中状态
+        const card = checkbox?.closest('.image-card');
+        if (card) {
+            if (selectedImages.has(imageId)) {
+                card.classList.add('selected');
+            } else {
+                card.classList.remove('selected');
+            }
+        }
+        
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        document.getElementById('selectedCount').textContent = selectedImages.size;
+    }
+
+    function selectAll() {
+        const checkboxes = document.querySelectorAll('input[id^="select-"]');
+        checkboxes.forEach(checkbox => {
+            const imageId = checkbox.id.replace('select-', '');
+            selectedImages.add(imageId);
+            checkbox.checked = true;
+            
+            // 添加选中状态的视觉效果
+            const card = checkbox.closest('.image-card');
+            if (card) {
+                card.classList.add('selected');
+            }
+        });
+        updateSelectedCount();
+    }
+
+    function clearSelection() {
+        selectedImages.clear();
+        const checkboxes = document.querySelectorAll('input[id^="select-"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+            
+            // 移除选中状态的视觉效果
+            const card = checkbox.closest('.image-card');
+            if (card) {
+                card.classList.remove('selected');
+            }
+        });
+        updateSelectedCount();
+    }
+
+    // 批量删除确认
+    function confirmBatchDelete() {
+        if (selectedImages.size === 0) {
+            showAlert('请先选择要删除的图片', 'warning');
+            return;
+        }
+
+        const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+        document.getElementById('deleteConfirmText').textContent = 
+            `确定要删除选中的 ${selectedImages.size} 张图片吗？此操作不可恢复。`;
+        modal.show();
+    }
+
+    // 执行批量删除
+    async function executeBatchDelete() {
+        try {
+            const imageIds = Array.from(selectedImages);
+            
+            const response = await fetch('/api/images/batch-delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ image_ids: imageIds })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert(result.message, 'success');
+                selectedImages.clear();
+                exitSelectMode();
+                loadImages();
+                loadCategoryStats(); // 重新加载分类统计
+            } else {
+                showAlert(`删除失败: ${result.error}`, 'danger');
+            }
+
+        } catch (error) {
+            console.error('批量删除失败:', error);
+            showAlert('删除失败，请重试', 'danger');
+        }
+    }
+
+    // 批量添加到收藏
+    async function batchAddToFavorites() {
+        if (selectedImages.size === 0) {
+            showAlert('请先选择要收藏的图片', 'warning');
+            return;
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const imageId of selectedImages) {
+            try {
+                const response = await fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image_id: imageId, type: 'image' })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (error) {
+                console.error(`收藏图片 ${imageId} 失败:`, error);
+                failCount++;
+            }
+        }
+
+        if (successCount > 0) {
+            showAlert(`成功收藏 ${successCount} 张图片${failCount > 0 ? `，失败 ${failCount} 张` : ''}`, 'success');
+            clearSelection();
+            loadImages(); // 重新加载以更新收藏状态
+        } else {
+            showAlert('收藏失败，请重试', 'danger');
+        }
+    }
+
     function getCategoryDisplayName(category) {
         const names = {
             'clothes': '服装',
@@ -369,20 +604,30 @@
         <div class="row">
             ${images.map(image => `
                 <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6 mb-4">
-                    <div class="card image-card h-100">
+                    <div class="card image-card h-100 ${selectMode ? 'selectable' : ''}" 
+                         ${selectMode ? `onclick="toggleImageSelection('${image.id}')"` : ''}>
                         <div class="position-relative">
+                            ${selectMode ? `
+                                <div class="selection-checkbox position-absolute top-0 start-0 m-2" style="z-index: 10;">
+                                    <input type="checkbox" class="form-check-input" 
+                                           id="select-${image.id}" 
+                                           ${selectedImages.has(image.id) ? 'checked' : ''}
+                                           onchange="toggleImageSelection('${image.id}')">
+                                </div>
+                            ` : ''}
                             <img src="${image.thumbnail_url}" class="card-img-top thumbnail" 
                                  alt="${image.page_title || '未知页面'}"
-                                 onclick="showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})">
+                                 onclick="${selectMode ? `toggleImageSelection('${image.id}')` : `showImagePreview('${image.preview_url}', '${escapeHtml(image.page_title || '')}', '${escapeHtml(image.page_url || '')}', ${JSON.stringify(image).replace(/"/g, '&quot;')})`}">
                             
                             <!-- 分类标签 -->
-                            <span class="position-absolute top-0 start-0 badge ${getCategoryBadgeClass(image.category)} m-1">
+                            <span class="position-absolute top-0 start-0 badge ${getCategoryBadgeClass(image.category)} m-1" 
+                                  style="${selectMode ? 'margin-top: 2.5rem !important;' : ''}">
                                 <i class="bi ${getCategoryIcon(image.category)}"></i> ${getCategoryDisplayName(image.category)}
                             </span>
                             
                             <!-- 收藏按钮 -->
                             <button class="btn btn-sm position-absolute top-0 end-0 m-1 favorite-btn ${image.is_favorited ? 'btn-danger' : 'btn-outline-light'}" 
-                                    onclick="toggleFavorite('${image.id}', ${image.is_favorited})" 
+                                    onclick="event.stopPropagation(); toggleFavorite('${image.id}', ${image.is_favorited})" 
                                     title="${image.is_favorited ? '取消收藏' : '添加收藏'}">
                                 <i class="bi ${image.is_favorited ? 'bi-heart-fill' : 'bi-heart'}"></i>
                             </button>
