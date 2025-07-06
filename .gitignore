@@ -5,3 +5,4 @@
 *.jpg
 *.pyc
 *.zip
+local_client/__pycache__/app.cpython-310.pyc

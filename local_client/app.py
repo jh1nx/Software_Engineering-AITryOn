@@ -24,7 +24,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)  # 会话�
 BASE_SAVE_DIR = Path("saved_images")
 DB_PATH = "image_database.db"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-CLOUD_SERVER_URL = "http://localhost:8081/api"  # 修改为本地测试服务器
+CLOUD_SERVER_URL = "http://localhost:6006/api"  # 修改为本地测试服务器
 ENABLE_CLOUD_SYNC = True  # 启用云端同步进行测试
 
 # IDM-VTON API 配置
@@ -1465,6 +1465,170 @@ def get_user_file_paths_by_id(user_id):
         print(f"获取用户文件路径失败: {e}")
         return jsonify({'success': False, 'error': f'获取文件路径失败: {str(e)}'}), 500
 
+def download_image_from_url(image_info, user_id, base_dir):
+    """下载单个图片到指定用户目录的分类文件夹"""
+    try:
+        category = image_info.get('category', 'clothes')
+        filename = image_info.get('filename')
+        url = image_info.get('url')
+        
+        if not all([filename, url, category]):
+            print(f"下载失败: 缺少必要信息 - filename:{filename}, url:{url}, category:{category}")
+            return False
+        
+        # 构建文件路径 - 使用 saved_images/ 而不是 downloads/
+        file_path = Path(base_dir) / user_id / category / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        print(f"开始下载图片: {filename} -> {file_path}")
+        
+        # 发送HTTP请求下载图片
+        response = requests.get(url, timeout=30)
+        
+        if response.status_code == 200:
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+            print(f"下载成功: {filename} ({len(response.content)} bytes)")
+            
+            # 保存到数据库
+            try:
+                image_id = str(uuid.uuid4())
+                
+                # 获取图片尺寸
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                except Exception:
+                    width, height = 0, 0
+                
+                # 保存数据库记录
+                db.save_image_record(
+                    image_id, user_id, filename, url, 
+                    {'url': url, 'title': f'Downloaded from {url}'}, 
+                    len(response.content), width, height, 
+                    {'downloaded_from': url, 'category': category}, 
+                    category
+                )
+                print(f"已保存到数据库: {image_id}")
+                
+            except Exception as db_error:
+                print(f"保存到数据库失败: {db_error}")
+                # 即使数据库保存失败，文件下载成功也算成功
+            
+            return True
+        else:
+            print(f"下载失败 [{response.status_code}]: {url}")
+            return False
+            
+    except Exception as e:
+        print(f"下载错误: {e}")
+        return False
+
+def sync_images_from_server(user_id, images_data, max_workers=5):
+    """从服务器同步图片到本地 saved_images 目录"""
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # 准备所有图片信息
+        all_images = []
+        for category, images in images_data.items():
+            print(f"分类 '{category}' 中有 {len(images)} 张图片")
+            all_images.extend(images)
+        
+        if not all_images:
+            print("没有图片需要下载")
+            return True, "没有图片需要下载"
+        
+        # 使用 saved_images 作为基础目录
+        base_dir = BASE_SAVE_DIR
+        
+        # 并行下载所有图片
+        print(f"开始下载 {len(all_images)} 张图片到 {base_dir}/{user_id}/...")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(
+                lambda img: download_image_from_url(img, user_id, base_dir), 
+                all_images
+            ))
+        
+        success_count = sum(results)
+        total_count = len(all_images)
+        
+        print(f"下载完成！成功 {success_count}/{total_count} 张图片")
+        
+        if success_count == total_count:
+            return True, f"全部 {total_count} 张图片下载成功"
+        elif success_count > 0:
+            return True, f"下载完成，成功 {success_count}/{total_count} 张图片"
+        else:
+            return False, "所有图片下载失败"
+            
+    except Exception as e:
+        print(f"同步图片失败: {e}")
+        return False, f"同步图片失败: {str(e)}"
+
+def organize_user_images(user_id):
+    """整理用户图片，确保文件和数据库记录一致"""
+    try:
+        user_dir = BASE_SAVE_DIR / user_id
+        if not user_dir.exists():
+            print(f"用户目录不存在: {user_dir}")
+            return False
+        
+        categories = ['clothes', 'char', 'vton_results']
+        organized_count = 0
+        
+        for category in categories:
+            category_dir = user_dir / category
+            if not category_dir.exists():
+                continue
+            
+            # 扫描目录中的所有图片文件
+            for file_path in category_dir.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
+                    filename = file_path.name
+                    
+                    # 检查数据库中是否已有记录
+                    existing_image = db.get_image_by_filename(user_id, filename)
+                    if not existing_image:
+                        # 为没有数据库记录的文件创建记录
+                        try:
+                            image_id = str(uuid.uuid4())
+                            
+                            # 获取文件信息
+                            file_size = file_path.stat().st_size
+                            
+                            # 获取图片尺寸
+                            try:
+                                from PIL import Image
+                                with Image.open(file_path) as img:
+                                    width, height = img.size
+                            except Exception:
+                                width, height = 0, 0
+                        
+                            # 创建数据库记录
+                            db.save_image_record(
+                                image_id, user_id, filename, '', 
+                                {'url': '', 'title': f'Local file: {filename}'}, 
+                                file_size, width, height, 
+                                {'category': category, 'source': 'local_file'}, 
+                                category
+                            )
+                            
+                            organized_count += 1
+                            print(f"为本地文件创建数据库记录: {filename}")
+                            
+                        except Exception as e:
+                            print(f"为文件 {filename} 创建数据库记录失败: {e}")
+        
+        print(f"整理完成，为 {organized_count} 个文件创建了数据库记录")
+        return True
+        
+    except Exception as e:
+        print(f"整理用户图片失败: {e}")
+        return False
+
 # Web界面路由
 @app.route('/')
 def index():
@@ -1544,24 +1708,129 @@ def login():
         session['user_id'] = user_id
         session['username'] = username
         
-        # 尝试云端登录（仅在启用时）
+        # 准备按分类的图片数据
+        images_by_category = {}
+        allowed_categories = ['clothes', 'char', 'vton_results']
+        
+        # 检查用户目录是否存在
+        user_dir = BASE_SAVE_DIR / user_id
+        if user_dir.exists():
+            # 遍历所有分类
+            for category in allowed_categories:
+                category_dir = user_dir / category
+                
+                # 检查分类目录是否存在
+                if category_dir.exists():
+                    try:
+                        # 读取目录内容
+                        files = []
+                        for file_path in category_dir.iterdir():
+                            if file_path.is_file() and file_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.gif', '.webp']:
+                                # 构建图片信息
+                                file_info = {
+                                    'filename': file_path.name,
+                                    'url': url_for('serve_user_image_by_category', 
+                                                  user_id=user_id, 
+                                                  category=category, 
+                                                  filename=file_path.name, 
+                                                  _external=True),
+                                    'category': category,
+                                    'size': file_path.stat().st_size,
+                                    'modified': datetime.datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
+                                }
+                                files.append(file_info)
+                        
+                        images_by_category[category] = files
+                        print(f"分类 '{category}' 中找到 {len(files)} 张图片")
+                        
+                    except Exception as read_error:
+                        print(f"读取分类目录失败: {category_dir}, 错误: {read_error}")
+                        images_by_category[category] = []
+                else:
+                    images_by_category[category] = []
+        else:
+            # 用户目录不存在，所有分类都为空
+            for category in allowed_categories:
+                images_by_category[category] = []
+        
+        # 尝试云端登录并同步图片（仅在启用时）
+        cloud_sync_result = None
         if ENABLE_CLOUD_SYNC:
-            def cloud_login():
-                cloud_client.login_user(username, password)
+            def cloud_sync_task():
+                try:
+                    print(f"开始云端登录和同步: {username}")
+                    
+                    # 云端登录
+                    cloud_result = cloud_client.login_user(username, password)
+                    if cloud_result and cloud_result.get('success'):
+                        print(f"云端登录成功: {cloud_result}")
+                        
+                        # 检查云端是否有图片数据需要同步
+                        cloud_images = cloud_result.get('images', {})
+                        if cloud_images:
+                            print(f"发现云端图片数据，开始同步...")
+                            
+                            # 过滤出需要下载的图片（云端有但本地没有的）
+                            images_to_sync = {}
+                            
+                            for category, cloud_category_images in cloud_images.items():
+                                if category in allowed_categories and cloud_category_images:
+                                    local_filenames = set(img['filename'] for img in images_by_category.get(category, []))
+                                    
+                                    # 找出本地不存在的云端图片
+                                    missing_images = []
+                                    for cloud_img in cloud_category_images:
+                                        if cloud_img.get('filename') not in local_filenames:
+                                            missing_images.append(cloud_img)
+                                    
+                                    if missing_images:
+                                        images_to_sync[category] = missing_images
+                                        print(f"分类 '{category}' 需要同步 {len(missing_images)} 张图片")
+                            
+                            # 执行图片同步
+                            if images_to_sync:
+                                sync_success, sync_message = sync_images_from_server(user_id, images_to_sync, max_workers=3)
+                                print(f"图片同步结果: {sync_success}, {sync_message}")
+                                
+                                # 同步完成后整理本地图片
+                                organize_user_images(user_id)
+                                print(f"用户 {user_id} 图片整理完成")
+                            else:
+                                print("没有新图片需要同步")
+                        else:
+                            print("云端没有图片数据")
+                    else:
+                        print(f"云端登录失败: {cloud_result}")
+                        
+                except Exception as e:
+                    print(f"云端同步任务失败: {e}")
+                    import traceback
+                    traceback.print_exc()
             
-            threading.Thread(target=cloud_login).start()
+            # 启动异步云端同步任务
+            threading.Thread(target=cloud_sync_task, daemon=True).start()
+        
+        # 计算总图片数量
+        total_images = sum(len(category_images) for category_images in images_by_category.values())
         
         return jsonify({
             'success': True,
             'user': {
-                'user_id': user_id,
+                'id': user_id,  # 使用 'id' 字段以保持与服务器代码一致
+                'user_id': user_id,  # 保留原有字段以维持兼容性
                 'username': username,
                 'email': email
             },
-            'message': '登录成功'
+            'images': images_by_category,
+            'message': f'登录成功！找到 {total_images} 张图片，正在后台同步云端数据...' if ENABLE_CLOUD_SYNC else f'登录成功！找到 {total_images} 张图片',
+            'sync_info': {
+                'cloud_sync_enabled': ENABLE_CLOUD_SYNC,
+                'sync_in_progress': ENABLE_CLOUD_SYNC
+            }
         })
         
     except Exception as e:
+        print(f"登录错误: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/logout', methods=['POST'])
@@ -2523,4 +2792,60 @@ def get_image_details(image_id):
             
     except Exception as e:
         print(f"获取图片详情API失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# 图片同步和管理API
+@app.route('/api/sync/images', methods=['POST'])
+@login_required
+def sync_images():
+    """同步图片到本地 saved_images 目录"""
+    try:
+        user_id = session['user_id']
+        data = request.get_json()
+        
+        images_data = data.get('images', {})
+        max_workers = data.get('max_workers', 5)
+        
+        if not images_data:
+            return jsonify({'success': False, 'error': '没有图片数据需要同步'}), 400
+        
+        # 执行同步
+        success, message = sync_images_from_server(user_id, images_data, max_workers)
+        
+        if success:
+            # 同步完成后整理文件
+            organize_user_images(user_id)
+            return jsonify({
+                'success': True, 
+                'message': message,
+                'user_id': user_id,
+                'saved_to': str(BASE_SAVE_DIR / user_id)
+            })
+        else:
+            return jsonify({'success': False, 'error': message}), 500
+            
+    except Exception as e:
+        print(f"同步图片失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/organize/images', methods=['POST'])
+@login_required
+def organize_images():
+    """整理用户图片，确保文件和数据库记录一致"""
+    try:
+        user_id = session['user_id']
+        
+        success = organize_user_images(user_id)
+        
+        if success:
+            return jsonify({
+                'success': True, 
+                'message': '图片整理完成',
+                'user_id': user_id
+            })
+        else:
+            return jsonify({'success': False, 'error': '图片整理失败'}), 500
+            
+    except Exception as e:
+        print(f"整理图片失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

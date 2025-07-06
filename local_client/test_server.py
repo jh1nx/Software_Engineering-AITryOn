@@ -4,6 +4,7 @@ import base64
 import uuid
 import datetime
 import time
+import random
 import os
 from pathlib import Path
 import sqlite3
@@ -14,7 +15,7 @@ import io
 
 # 测试配置
 LOCAL_CLIENT_URL = "http://localhost:8080"
-CLOUD_SERVER_URL = "http://localhost:8081"
+CLOUD_SERVER_URL = "http://localhost:6006"
 TEST_DATA_DIR = Path("test_data")
 TEST_IMAGES_DIR = TEST_DATA_DIR / "test_images"
 
@@ -27,7 +28,7 @@ class ServerTester:
         self.local_session = requests.Session()
         self.cloud_session = requests.Session()
         self.test_results = []
-        self.test_user_data = {}
+        self.test_user_data = {'token': None, 'cloud_user_id': None}
         
     def log_test(self, test_name, success, message, details=None):
         """记录测试结果"""
@@ -133,13 +134,14 @@ class ServerTester:
         """测试用户注册"""
         try:
             # 生成测试用户数据
-            timestamp = int(time.time())
+            timestamp = int(time.time())* random.randint(10, 50000)
             test_user = {
                 'username': f'testuser_{timestamp}',
                 'email': f'test_{timestamp}@example.com',
                 'password': 'test123456'
             }
             self.test_user_data = test_user
+            print("生成的测试用户数据:", test_user)
             
             # 测试本地注册
             response = self.local_session.post(
@@ -163,11 +165,12 @@ class ServerTester:
                     cloud_response = self.cloud_session.post(
                         f"{CLOUD_SERVER_URL}/api/register",
                         json={**test_user, 'local_user_id': local_result['user_id']},
-                        timeout=10
+                        timeout=20
                     )
                     
                     if cloud_response.status_code == 200:
                         cloud_result = cloud_response.json()
+            
                         if cloud_result.get('success'):
                             self.test_user_data['cloud_user_id'] = cloud_result['cloud_user_id']
                             self.log_test(
@@ -217,14 +220,13 @@ class ServerTester:
             
             if response.status_code == 200:
                 result = response.json()
-                if result.get('success'):
-                    self.log_test(
-                        "本地用户登录", 
-                        True, 
-                        "登录成功",
-                        result
-                    )
-                    return True
+                self.log_test(
+                    "本地用户登录", 
+                    True, 
+                    "登录成功",
+                    result
+                )
+                return True
             
             self.log_test(
                 "本地用户登录", 
@@ -240,6 +242,71 @@ class ServerTester:
                 f"异常: {str(e)}"
             )
             return False
+    
+    def my_login(self):
+        """云端用户登录"""
+        try:
+            login_data = {
+                'username': self.test_user_data['username'],
+                'password': self.test_user_data['password']
+            }
+            
+            # 测试云端登录
+            response = self.local_session.post(
+                f"{CLOUD_SERVER_URL}/api/login",
+                json=login_data,
+                timeout=20
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"响应中包含的键: {list(result.keys())}")
+                token_key = 'token'  # 尝试小写
+                if token_key in result:
+                    self.test_user_data['token'] = result[token_key]
+                    self.log_test(
+                        "云端用户登录", 
+                        True, 
+                        "登录成功",
+                        result
+                    )
+                else:
+                    # 尝试大写
+                    token_key = 'Token'
+                    if token_key in result:
+                        self.test_user_data['token'] = result[token_key]
+                        self.log_test(
+                            "云端用户登录", 
+                            True, 
+                            "登录成功（使用大写Token）",
+                            result
+                        )
+                        return True
+                    else:
+                        self.log_test(
+                            "本地用户登录", 
+                            False, 
+                            "响应中没有token或Token字段"
+                        )
+                        return False    
+                return True 
+            
+            self.log_test(
+                "云端用户登录", 
+                False, 
+                f"登录失败: {response.text}"
+            )
+            return False
+            
+        except Exception as e:
+            self.log_test(
+                "云端登录测试", 
+                False, 
+                f"异常: {str(e)}"
+            )
+            return False
+    
+    
     
     def test_image_upload(self):
         """测试图片上传功能"""
@@ -360,7 +427,7 @@ class ServerTester:
             # 首先需要修改本地客户端配置以启用云端同步
             print("\n开始测试云端同步功能...")
             print("注意: 需要在本地客户端中将 ENABLE_CLOUD_SYNC 设置为 True")
-            print("注意: 需要将 CLOUD_SERVER_URL 设置为 'http://localhost:8081/api'")
+            print("注意: 需要将 CLOUD_SERVER_URL 设置为 'http://localhost:6006/api'")
             
             # 检查用户是否有图片数据
             if not self.test_user_data.get('user_images'):
@@ -419,7 +486,7 @@ class ServerTester:
             # 构造同步数据
             sync_payload = {
                 'user_info': {
-                    'user_id': user_id,
+                    'userId': user_id,
                     'username': self.test_user_data['username'],
                     'email': self.test_user_data['email']
                 },
@@ -439,23 +506,36 @@ class ServerTester:
             }
             
             print(f"同步数据统计: {sync_payload['sync_statistics']}")
+            print(f"元数据数量: {len(sync_payload['images_metadata'])}")
+            print(f"文件数据数量: {len(sync_payload['image_files'])}")
+            print(f"第一个文件名: {list(sync_payload['image_files'].keys())[0] if sync_payload['image_files'] else '空'}")
+            print(f"第一个文件数据大小: {len(sync_payload['image_files'][list(sync_payload['image_files'].keys())[0]]) if sync_payload['image_files'] else 0}")
+            
+            token = self.test_user_data.get('token')
+            
+            # 添加认证头
+            headers = {'Content-Type': 'application/json'}
+            if token:
+                headers['Authorization'] = f'Bearer {token}'
+            else:
+                print("警告：未找到token，将尝试无认证请求")
             
             # 发送同步请求到云端
             response = self.cloud_session.post(
                 f"{CLOUD_SERVER_URL}/api/sync/user/{user_id}",
                 json=sync_payload,
                 timeout=300,  # 5分钟超时
-                headers={'Content-Type': 'application/json'}
+                headers=headers
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('success'):
-                    sync_result = result.get('sync_result', {})
+                    sync_result = result.get('upserted', {})
                     self.log_test(
                         "云端数据同步", 
                         True, 
-                        f"同步成功，保存 {sync_result.get('saved_files', 0)} 个文件",
+                        f"同步成功，保存 {sync_result.get('saved_files')} 个文件",
                         sync_result
                     )
                     
@@ -492,10 +572,17 @@ class ServerTester:
         """测试同步状态查询"""
         try:
             user_id = self.test_user_data['local_user_id']
+            
+            headers = {'Content-Type': 'application/json'}
+            headers['Authorization'] = f"Bearer {self.test_user_data['token']}"
+            
+            # 发送同步请求到云端
             response = self.cloud_session.get(
                 f"{CLOUD_SERVER_URL}/api/user/{user_id}/sync/status",
-                timeout=10
+                timeout=300,  # 5分钟超时
+                headers=headers
             )
+        
             
             if response.status_code == 200:
                 result = response.json()
@@ -565,6 +652,8 @@ class ServerTester:
             )
             return False
     
+    
+    
     def run_all_tests(self):
         """运行所有测试"""
         print("🧪 开始服务器同步功能测试")
@@ -575,6 +664,7 @@ class ServerTester:
             self.test_local_client_status,
             self.test_user_registration,
             self.test_user_login,
+            self.my_login,  # 添加云端登录测试
             self.test_image_upload,
             self.test_get_user_images,
             self.test_cloud_sync,
@@ -594,6 +684,7 @@ class ServerTester:
                 )
         
         self.generate_test_report()
+    
     
     def generate_test_report(self):
         """生成测试报告"""
@@ -644,12 +735,12 @@ def main():
     print("🚀 启动服务器同步功能测试")
     print("请确保以下服务正在运行:")
     print("  - 本地客户端: http://localhost:8080")
-    print("  - 云端服务器: http://localhost:8081")
+    print("  - 云端服务器: http://localhost:6006")
     print("\n开始测试前，请确认:")
     print("  1. 两个服务器都已启动")
     print("  2. 如果要测试完整同步功能，请在 app.py 中设置:")
     print("     ENABLE_CLOUD_SYNC = True")
-    print("     CLOUD_SERVER_URL = 'http://localhost:8081/api'")
+    print("     CLOUD_SERVER_URL = 'http://localhost:6006/api'")
     
     input("\n按 Enter 键开始测试...")
     
