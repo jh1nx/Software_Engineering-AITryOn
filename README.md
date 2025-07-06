@@ -7,10 +7,17 @@
 （3）重写webUI界面，实现现代化交互界面，并实现IDM-VTON框架对用户完全透明；
 （4）添加小插件，实现从网页上面一键截取图片、发送到服务器、服务器在指定文件夹路径上一键选择并生成的功能；
 
-使用教程：
+## 使用教程：
 
-1.在服务器上部署IDM-VTON框架和云端服务器（框架和服务器的代码在[https://github.com/alittleplayyer/AITryOn](https://github.com/alittleplayyer/AITryOn)）；
+1. 在服务器上部署IDM-VTON框架和云端服务器（框架和服务器的代码在[https://github.com/alittleplayyer/AITryOn](https://github.com/alittleplayyer/AITryOn)）；
 
-2.将本仓库代码克隆到本地，并安装好环境依赖；
+2. 将本仓库代码克隆到本地，并安装好环境依赖
 
-3.运行run.py，并将生成的链接复制到浏览器中打开。
+3. 安装浏览器插件（可选）
+
+4. 在`local_client`运行`python run.py`，并将生成的链接复制到浏览器中打开。
+
+
+## 项目亮点
+1. 浏览器插件：可以一键获取商品页图片并发送到本地客户端，并且建立链接，使得可以通过本地客户端快捷跳转到商品页
+2. 云端同步：将个人图片、服装图片和试穿结果同步到云端，同时使用Redis缓存，显著提升同步效率，实现多客户端访问
