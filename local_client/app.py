@@ -1645,6 +1645,11 @@ def tryon_page():
     """虚拟试穿页面"""
     return render_template('tryon.html')
 
+@app.route('/tutorial')
+def tutorial_page():
+    """使用教程页面"""
+    return render_template('tutorial.html')
+
 # 用户认证API
 @app.route('/api/register', methods=['POST'])
 def register():

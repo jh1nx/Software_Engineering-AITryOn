@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+
+{% block title %}使用教程 - 虚拟试穿系统{% endblock %}
+
+{% block content %}
+<style>
+    /* 增强文字对比度的自定义样式 */
+    .enhanced-text {
+        color: #ffffff !important;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+    }
+    
+    .enhanced-link {
+        color: #f8f9fa !important;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    }
+    
+    .enhanced-link:hover {
+        color: #ffd700 !important;
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9);
+    }
+    
+    .card-text, .list-group-item {
+        color: #f8f9fa !important;
+    }
+    
+    .alert {
+        color: #ffffff !important;
+    }
+    
+    /* 强化代码块对比度 */
+    code {
+        background-color: rgba(0, 0, 0, 0.8) !important;
+        color: #ffd700 !important;
+        padding: 2px 4px;
+        border-radius: 3px;
+    }
+    
+    /* 增强卡片内文字对比度 */
+    .card-genshin .card-text {
+        color: #f8f9fa !important;
+        font-weight: 500;
+    }
+    
+    .card-genshin ul li {
+        color: #f8f9fa !important;
+    }
+    
+    .card-genshin ol li {
+        color: #f8f9fa !important;
+    }
+    
+    /* 增强段落文字对比度 */
+    .card-genshin p {
+        color: #f8f9fa !important;
+    }
+</style>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card-genshin mb-4">
+                <div class="card-body">
+                    <h1 class="hero-title text-center mb-4">
+                        <i class="bi bi-book"></i> 虚拟试穿系统使用教程
+                    </h1>
+                    
+                    <!-- 目录导航 -->
+                    <div class="card-genshin mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title"><i class="bi bi-list-ul"></i> 目录</h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled">
+                                        <li><a href="#browser-plugin" class="text-decoration-none text-warning"> 安装浏览器插件</a></li>
+                                        <li><a href="#auth" class="text-decoration-none text-warning"> 注册、登录</a></li>
+                                        <li><a href="#upload" class="text-decoration-none text-warning"> 上传图片</a></li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <ul class="list-unstyled">
+                                        <li><a href="#tryon" class="text-decoration-none text-warning"> 进行虚拟试穿</a></li>
+                                        <li><a href="#gallery" class="text-decoration-none text-warning"> 查看图片库</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 安装浏览器插件 -->
+                    <section id="browser-plugin" class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body">
+                                <h2 class="card-title text-light">
+                                    <i class="bi bi-browser-chrome text-warning"></i> 一、安装浏览器插件
+                                </h2>
+                                <p class="card-text">
+                                    这个教程可以帮助你快速入手我们开发的虚拟试穿系统。
+                                </p>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">(1)</span> 系统要求</h4>
+                                <ul>
+                                    <li><strong>浏览器</strong>: Chrome 或基于 Chromium 的浏览器（如 Edge、Opera 等）</li>
+                                    <li><strong>本地服务器</strong>: 需要运行虚拟试穿系统的本地客户端</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">(2)</span> 安装步骤</h4>
+                                
+                                <h5 class="mt-3">1. 确保你的插件文件完整</h5>
+                                <p>（浏览器插件在browser_extension中）</p>
+                                
+                                <h5 class="mt-3">2. 加载插件到浏览器</h5>
+                                <ol>
+                                    <li>打开 Chrome 浏览器</li>
+                                    <li>在地址栏输入 <code>chrome://extensions/</code></li>
+                                    <li>开启右上角的"开发者模式"</li>
+                                    <li>点击"加载已解压的扩展程序"</li>
+                                    <li>选择包含插件文件的 <code>browser_extension</code> 文件夹</li>
+                                    <li>插件安装完成后，会在浏览器工具栏显示插件图标</li>
+                                </ol>
+                                
+                                <h5 class="mt-3">3. 启动本地服务器</h5>
+                                <p>在使用插件之前，必须先启动本地处理软件：</p>
+                                <ol>
+                                    <li>打开命令行终端</li>
+                                    <li>导航到 <code>local_client</code> 目录</li>
+                                    <li>运行命令：<code>python app.py</code></li>
+                                    <li>确保服务器在 <code>localhost:8080</code> 端口运行</li>
+                                </ol>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">(3)</span> 使用方法</h4>
+                                <ol>
+                                    <li>首先在浏览器扩展处开启该插件，并查看插件是否"已连接"</li>
+                                    <li>在任何网页上找到你想要的图片</li>
+                                    <li>右键点击图片</li>
+                                    <li>选择"发送图片到本地处理软件"</li>
+                                    <li>等待处理完成通知</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 注册登录 -->
+                    <section id="auth" class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body">
+                                <h2 class="card-title text-light">
+                                    <i class="bi bi-person-check text-warning"></i> 二、注册、登录
+                                </h2>
+                                <p class="card-text">
+                                    与各种常见网站的注册登录方式一致，故省略。
+                                </p>
+                                
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i>
+                                    <strong>提示：</strong>
+                                    <ul class="mt-2 mb-0">
+                                        <li>用户名需要3-20个字符</li>
+                                        <li>密码至少6位</li>
+                                        <li>系统支持会话保持，7天内无需重复登录</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 上传图片 -->
+                    <section id="upload" class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body">
+                                <h2 class="card-title text-light">
+                                    <i class="bi bi-cloud-upload text-warning"></i> 三、上传图片
+                                </h2>
+                                <p class="card-text">
+                                    在首页下滑到第三页，即为软件的图片上传区域。
+                                </p>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（1）</span>本地上传</h4>
+                                <ul>
+                                    <li>点击"上传图片"按钮</li>
+                                    <li>选择图片文件（支持PNG、JPG、JPEG、GIF、WebP）</li>
+                                    <li>选择图片类型：人物图片或服装图片</li>
+                                    <li>系统自动处理和存储图片</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（2）</span>使用剪切板上传</h4>
+                                <ul>
+                                    <li>复制图片到剪切板</li>
+                                    <li>在系统中点击"从剪切板上传"</li>
+                                    <li>选择图片分类并确认上传</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（3）</span>浏览器插件上传</h4>
+                                <ul>
+                                    <li>安装浏览器插件（详见浏览器插件教程）</li>
+                                    <li>在网页上右键点击图片</li>
+                                    <li>选择"发送图片到本地处理软件"</li>
+                                    <li>系统收到后，会自动上传到系统中，此时选择图片类型并点击"上传图片"后即可上传</li>
+                                </ul>
+                                
+                                <div class="row mt-4">
+                                    <div class="col-md-4">
+                                        <div class="feature-item">
+                                            <div class="feature-icon">
+                                                <i class="bi bi-upload"></i>
+                                            </div>
+                                            <h6>本地上传</h6>
+                                            <p>直接选择本地图片文件上传</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="feature-item">
+                                            <div class="feature-icon">
+                                                <i class="bi bi-clipboard"></i>
+                                            </div>
+                                            <h6>剪切板上传</h6>
+                                            <p>复制图片后一键上传</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="feature-item">
+                                            <div class="feature-icon">
+                                                <i class="fab fa-chrome"></i>
+                                            </div>
+                                            <h6>浏览器插件</h6>
+                                            <p>从网页直接发送图片到本地</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 虚拟试穿 -->
+                    <section id="tryon" class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body">
+                                <h2 class="card-title text-light">
+                                    <i class="bi bi-magic text-warning"></i> 四、进行虚拟试穿
+                                </h2>
+                                <p class="card-text">
+                                    虚拟试穿页面导航在网页的上方
+                                </p>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（1）</span>选择人物图片</h4>
+                                <ul>
+                                    <li>在虚拟试穿页面左侧选择人物图片</li>
+                                    <li>支持从已上传的人物图片中选择</li>
+                                    <li>图片应包含清晰的人物正面形象</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（2）</span>选择服装图片</h4>
+                                <ul>
+                                    <li>在右侧选择要试穿的服装图片</li>
+                                    <li>支持上衣、裤子、裙子等各类服装</li>
+                                    <li>建议选择背景简洁的服装图片</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（3）</span>设置参数</h4>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <ul>
+                                            <li><strong>服装描述</strong>：用英文描述服装的类型（如裙子、T恤）、衣服的风格（如贴身、宽松）等</li>
+                                            <li><strong>去噪步骤数</strong>：设置得越高，图像质量越高，但是生成时间约长</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <ul>
+                                            <li><strong>随机种子</strong>：点击右边的随机按键，不同的种子之间在细节上有细微差别</li>
+                                            <li><strong>快速配置</strong>：可以根据不同的实际情况选择不同的需求</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <div class="tryon-params-panel-subtle mt-4">
+                                    <h5 class="text-light">🎛️ 参数设置说明</h5>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">服装描述 (Garment Description)</label>
+                                                <input type="text" class="form-control tryon-input-enhanced" placeholder="例如：a white t-shirt" readonly>
+                                                <div class="form-text">用英文描述服装类型和风格</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">去噪步骤数 (Denoise Steps)</label>
+                                                <input type="range" class="form-range" min="10" max="50" value="25" readonly>
+                                                <div class="form-text">数值越高质量越好，但处理时间越长</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（4）</span>开始试穿</h4>
+                                <ul>
+                                    <li>点击"开始虚拟试穿"按钮</li>
+                                    <li>系统会调用AI模型进行处理</li>
+                                    <li>下方的处理时间是一个预计时间，真正的处理时间约为40-80秒不等</li>
+                                </ul>
+                                
+                                <h4 class="text-light mt-4"><span class="text-warning">（5）</span>查看结果</h4>
+                                <ul>
+                                    <li>试穿完成后自动显示结果</li>
+                                    <li>支持下载试穿结果图片</li>
+                                    <li>可以保存到个人收藏</li>
+                                </ul>
+                                
+                                <div class="alert alert-success mt-4">
+                                    <i class="bi bi-clock"></i>
+                                    <strong>处理时间提示：</strong>
+                                    虚拟试穿的处理时间通常在40-80秒之间，请耐心等待。处理时间取决于图片大小和服务器性能。
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 查看图片库 -->
+                    <section id="gallery" class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body">
+                                <h2 class="card-title text-light">
+                                    <i class="bi bi-images text-warning"></i> 五、查看图片库
+                                </h2>
+                                <p class="card-text">
+                                    图片库页面导航在网页的上方
+                                </p>
+                                
+                                <h4 class="text-light mt-4">通过图片库，你可以：</h4>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="card bg-dark border-warning h-100">
+                                            <div class="card-body">
+                                                <h5 class="card-title text-light">
+                                                    <i class="bi bi-collection text-warning"></i> 分类查看
+                                                </h5>
+                                                <p class="card-text">分类查看上传、收藏的图片</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card bg-dark border-warning h-100">
+                                            <div class="card-body">
+                                                <h5 class="card-title text-light">
+                                                    <i class="bi bi-cloud-arrow-up text-warning"></i> 云端存储
+                                                </h5>
+                                                <p class="card-text">将图片发送到云端，通过服务器存储你的数据</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="card bg-dark border-warning h-100">
+                                            <div class="card-body">
+                                                <h5 class="card-title text-light">
+                                                    <i class="bi bi-layers text-warning"></i> 批量处理
+                                                </h5>
+                                                <p class="card-text">批量处理图片库中的图片</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="alert alert-info mt-4">
+                                    <i class="bi bi-info-circle"></i>
+                                    <strong>图片库功能：</strong>
+                                    <ul class="mt-2 mb-0">
+                                        <li>支持按分类（人物图片、服装图片）查看</li>
+                                        <li>支持搜索和筛选功能</li>
+                                        <li>支持批量删除和管理</li>
+                                        <li>支持收藏和取消收藏</li>
+                                        <li>支持云端同步和备份</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 版本信息 -->
+                    <section class="mb-5">
+                        <div class="card-genshin">
+                            <div class="card-body text-center">
+                                <h3 class="text-light">
+                                    <i class="bi bi-info-circle text-warning"></i> 教程总结
+                                </h3>
+                                <p class="mb-1">本教程介绍了虚拟试穿系统的完整使用流程</p>
+                                <p class="mb-1">从浏览器插件安装到虚拟试穿的全过程</p>
+                                <p class="mb-1">希望能够帮助您快速上手我们的系统</p>
+                                
+                                <div class="alert alert-success mt-4">
+                                    <i class="bi bi-check-circle"></i>
+                                    <strong>使用流程总结：</strong>
+                                    <ol class="mt-2 mb-0 text-start">
+                                        <li>安装并配置浏览器插件</li>
+                                        <li>注册账户并登录系统</li>
+                                        <li>通过多种方式上传图片</li>
+                                        <li>选择图片进行虚拟试穿</li>
+                                        <li>在图片库中管理您的图片</li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="mt-4">
+                                    <a href="{{ url_for('index') }}" class="btn btn-genshin me-2">
+                                        <i class="bi bi-house"></i> 返回首页
+                                    </a>
+                                    <a href="{{ url_for('tryon_page') }}" class="btn btn-outline-genshin me-2">
+                                        <i class="bi bi-magic"></i> 开始试穿
+                                    </a>
+                                    <a href="{{ url_for('images_page') }}" class="btn btn-outline-genshin">
+                                        <i class="bi bi-images"></i> 图片库
+                                    </a>
+                                </div>
+                                
+                                
+                                
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 平滑滚动到锚点
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+    
+    // 高亮当前可见的章节
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('a[href^="#"]');
+    
+    function highlightNavigation() {
+        let current = '';
+        sections.forEach(section => {
+            const sectionTop = section.offsetTop;
+            const sectionHeight = section.clientHeight;
+            if (pageYOffset >= sectionTop - 200) {
+                current = section.getAttribute('id');
+            }
+        });
+        
+        navLinks.forEach(link => {
+            link.classList.remove('fw-bold', 'text-warning');
+            link.classList.add('text-light');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('fw-bold', 'text-warning');
+                link.classList.remove('text-light');
+            }
+        });
+    }
+    
+    window.addEventListener('scroll', highlightNavigation);
+});
+</script>
+{% endblock %}
